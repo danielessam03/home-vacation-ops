@@ -14,7 +14,7 @@
         const m = new Map(saved.map((s) => [s.id, s]));
         setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
       };
-      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
+      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
       return (
         <div>
           <PageHeader title="Alerts" sub="Raised hourly by the verifier worker">
@@ -160,6 +160,7 @@
     const SettingsPage = () => {
       const { cfg, data, saveSetting } = useApp();
       const [tab, setTab] = useState('users');
+      const [preq, setPreq] = useState(cfg.project_required_fields || []); const [psla, setPsla] = useState(cfg.project_sla_hours || {});
       const [sla, setSla] = useState(cfg.sla_hours || {}); const [req, setReq] = useState(cfg.required_fields || []); const [chans, setChans] = useState(cfg.default_channels || []); const [labels, setLabels] = useState(cfg.portal_labels || {});
       const candidates = Object.keys(FIELD_LABEL).filter((k) => !['date_received', 'source_type', 'source_name', 'assigned_to'].includes(k));
       return (
@@ -174,6 +175,9 @@
               <p className="mb-3 text-sm text-slate-500">Ticked fields count toward 100% completeness ({req.length} selected). A listing cannot move to Ready to publish until all are filled. Existing listings are re-scored the next time they are saved.</p>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">{candidates.map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={req.includes(k)} onChange={() => setReq(req.includes(k) ? req.filter((x) => x !== k) : [...req, k])} />{FIELD_LABEL[k]}</label>)}</div>
               <div className="mt-3"><Btn onClick={() => saveSetting('required_fields', req)}>Save</Btn></div>
+              <h3 className="mt-6 border-t border-slate-200 pt-4 text-sm font-semibold text-brand-800">Projects — required fields ({preq.length} selected)</h3>
+              <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">{Object.keys(PROJECT_LABEL).filter((k) => !['date_received', 'assigned_to'].includes(k)).map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={preq.includes(k)} onChange={() => setPreq(preq.includes(k) ? preq.filter((x) => x !== k) : [...preq, k])} />{PROJECT_LABEL[k]}</label>)}</div>
+              <div className="mt-3"><Btn onClick={() => saveSetting('project_required_fields', preq)}>Save project fields</Btn></div>
             </Card>
           )}
           {tab === 'sla' && (
@@ -182,6 +186,9 @@
                 {[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={sla[k] == null ? '' : sla[k]} onChange={(e) => setSla({ ...sla, [k]: e.target.value })} /></Field>)}
               </div>
               <div className="mt-3"><Btn onClick={() => saveSetting('sla_hours', Object.fromEntries(Object.entries(sla).map(([k, v]) => [k, Number(v)])))}>Save</Btn></div>
+              <h3 className="mt-6 border-t border-slate-200 pt-4 text-sm font-semibold text-brand-800">Projects — SLA (hours from received to live on the website)</h3>
+              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">{[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={psla[k] == null ? '' : psla[k]} onChange={(e) => setPsla({ ...psla, [k]: e.target.value })} /></Field>)}</div>
+              <div className="mt-3"><Btn onClick={() => saveSetting('project_sla_hours', Object.fromEntries(Object.entries(psla).map(([k, v]) => [k, Number(v)])))}>Save project SLA</Btn></div>
               <div className="mt-5 max-w-sm border-t border-slate-200 pt-4"><Field label="Default uploader — every new listing is handed to this person to put online"><Select value={cfg.default_uploader || null} placeholder="Nobody (stays with the person who entered it)" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} onChange={(v) => saveSetting('default_uploader', v)} /></Field></div>
             </Card>
           )}
@@ -193,7 +200,7 @@
               <div className="mt-3"><Btn onClick={async () => { await saveSetting('default_channels', chans); await saveSetting('portal_labels', labels); }}>Save</Btn></div>
             </Card>
           )}
-          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /></div>}
+          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="project_types" title="Project — unit types" /><ListEditor settingKey="finishing_types" title="Project — finishing options" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /></div>}
           {tab === 'metrics' && <MetricDefsEditor />}
           {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
           {tab === 'verifier' && <VerifierTab />}
@@ -263,7 +270,7 @@
       profiles: { order: 'full_name' }, listings: { order: 'date_received', desc: true }, listing_channels: { order: 'updated_at', desc: true }, tasks: { order: 'created_at', desc: true },
       recurring_templates: { order: 'created_at' }, agencies: { order: 'display_name' }, agency_deliverables: { order: 'due_date' }, agency_metrics: { order: 'period_month', desc: true },
       kpi_targets: { order: 'period_month', desc: true }, alerts: { order: 'created_at', desc: true, max: 300 }, settings: { order: 'key' }, report_snapshots: { order: 'created_at', desc: true, max: 100 },
-      verifier_runs: { order: 'started_at', desc: true, max: 25 },
+      verifier_runs: { order: 'started_at', desc: true, max: 25 }, projects: { order: 'date_received', desc: true },
     };
     const EMPTY = Object.fromEntries(Object.keys(TABLES).map((t) => [t, []]));
 
@@ -279,6 +286,7 @@
 
     const NAV = [
       ['dashboard', 'Home', 'home', () => true], ['listings', 'Listings', 'list', () => true], ['tasks', 'Tasks', 'tasks', () => true], ['alerts', 'Alerts', 'bell', () => true],
+      ['projects', 'Projects', 'project', () => true],
       ['agencies', 'Agencies', 'agency', (me) => me.role !== 'data_entry'], ['kpis', 'KPIs', 'chart', () => true], ['reports', 'Reports', 'report', (me) => isMgr(me)], ['settings', 'Settings', 'cog', (me) => me.role === 'admin'],
     ];
 
@@ -326,7 +334,7 @@
       // the verifier changes data server-side: refresh the moving tables every 3 min and when the tab regains focus
       useEffect(() => {
         if (!me) return;
-        const refresh = () => ['listings', 'listing_channels', 'tasks', 'alerts'].forEach(reloadTable);
+        const refresh = () => ['listings', 'listing_channels', 'projects', 'tasks', 'alerts'].forEach(reloadTable);
         const t1 = setInterval(() => setNow(Date.now()), 60000); const t2 = setInterval(refresh, 180000);
         const onVis = () => { if (!document.hidden) { setNow(Date.now()); refresh(); } };
         document.addEventListener('visibilitychange', onVis);
@@ -367,10 +375,10 @@
 
       const nav = NAV.filter((n) => n[3](me));
       const unread = data.alerts.filter((a) => !a.is_read); const critical = unread.filter((a) => a.level === 'critical');
-      const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' ? route.page : 'dashboard';
+      const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' || route.page === 'project' ? route.page : 'dashboard';
       const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
       const navBtn = (n, mobile) => {
-        const active = page === n[0] || (n[0] === 'listings' && page === 'listing'); const count = n[0] === 'alerts' ? unread.length : 0;
+        const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : 0;
         return mobile ? (
           <button key={n[0]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
         ) : (
@@ -401,6 +409,8 @@
                 {page === 'dashboard' && <Dashboard />}
                 {page === 'listings' && <ListingsPage />}
                 {page === 'listing' && <ListingDetail key={route.id} id={route.id} />}
+                {page === 'projects' && <ProjectsPage />}
+                {page === 'project' && <ProjectDetail key={route.id} id={route.id} />}
                 {page === 'tasks' && <TasksPage />}
                 {page === 'agencies' && <AgenciesPage />}
                 {page === 'kpis' && <KpisPage />}

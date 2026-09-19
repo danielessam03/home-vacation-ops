@@ -38,6 +38,8 @@
       if (!mgr) {
         const incomplete = mineL.filter((l) => l.completeness_pct < 100 && l.entered_by === me.id);
         const toUpload = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id);
+        const projToUpload = data.projects.filter((p) => p.status === 'ready_to_publish' && p.assigned_to === me.id);
+        const myProjects = data.projects.filter((p) => ['draft', 'on_hold'].includes(p.status) && p.entered_by === me.id);
         const weekEnd = ymd(addDays(new Date(), 7));
         const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
         const needMedia = open.filter((l) => l.media_uploaded !== true || l.media_edited !== true);
@@ -47,6 +49,8 @@
             <div className="space-y-4">
               {kpiTiles}
               <div className="grid gap-4 lg:grid-cols-2">
+                {me.role === 'data_entry' && projToUpload.length > 0 && <Section title="Projects ready — waiting for me to upload" count={projToUpload.length} tone="red">{projToUpload.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
+                {me.role === 'data_entry' && myProjects.length > 0 && <Section title="My projects in progress" count={myProjects.length}>{myProjects.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {p.completeness_pct}% complete</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
                 {me.role === 'data_entry' && toUpload.length > 0 && <Section title="Ready — waiting for me to upload" count={toUpload.length} tone="red">{limitList(withSla(toUpload), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />, '')}</Section>}
                 {me.role === 'data_entry' && <Section title="My SLA clocks" count={mineL.length}>{limitList(withSla(mineL), ({ l }) => <ListingLine key={l.id} l={l} />, 'Nothing in progress.')}</Section>}
                 {me.role === 'data_entry' && <Section title="My incomplete listings" count={incomplete.length} tone="red">{limitList(incomplete, (l) => <ListingLine key={l.id} l={l} note={`Missing: ${(l.missing_fields || []).map((m) => FIELD_LABEL[m] || m).join(', ')}`} />, 'All complete.')}</Section>}
@@ -83,6 +87,7 @@
               <Tile label="Waiting approval" value={review.length + submitted.length} onClick={() => go('tasks')} />
               <Tile label="Tasks overdue" value={overdue.length} tone={overdue.length ? 'red' : null} onClick={() => go('tasks')} />
             </div>
+            {(() => { const bad = data.projects.filter((p) => !['archived', 'rejected', 'verified_live', 'on_hold'].includes(p.status)).map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter((x) => x.s.state === 'red' || x.s.claimedNotFound); return bad.length ? <Section title="Projects — SLA breached or claimed but not found" count={bad.length} tone="red">{bad.map(({ p, s }) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {s.claimedNotFound ? 'claimed, not found' : LISTING_STATUS[p.status][0]} · {nameOf(p.assigned_to || p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section> : null; })()}
             <div className="grid gap-4 lg:grid-cols-2">
               <Section title="Breached SLAs (> 72h, not live)" count={breached.length} tone="red">{limitList(breached, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.assigned_to || l.entered_by)} · ${LISTING_STATUS[l.status][0]}`} />, 'No breaches.')}</Section>
               <Section title="Claimed published — NOT found on website" count={cnf.length} tone="red">{limitList(cnf, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} claimed ${fmtDateTime(l.date_published_claimed)}`} />, 'Every claim has been verified.')}</Section>
@@ -128,7 +133,7 @@
       channel: ['By channel', [['total', 'Listings'], ['published', 'Published'], ['in_progress', 'In progress'], ['rejected', 'Rejected'], ['coverage_pct', 'Coverage %']]],
       agency: ['By agency', [['planned', 'Planned'], ['delivered', 'Delivered'], ['delivery_rate', 'Delivery %'], ['on_time_pct', 'On time %'], ['revision_rate', 'Revision %'], ['leads', 'Leads'], ['cpl', 'Cost / lead']]],
     };
-    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Entered'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_ready', 'Hours to ready'], ['rejected_count', 'Rejected'], ['listings_uploaded', 'Uploaded'], ['avg_hours_ready_to_live', 'Hours ready→live'], ['on_time_pct', 'Within SLA %'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
+    const KPI_COLS = [['name', 'Name'], ['projects_entered', 'Projects in'], ['projects_uploaded', 'Projects up'], ['listings_entered', 'Entered'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_ready', 'Hours to ready'], ['rejected_count', 'Rejected'], ['listings_uploaded', 'Uploaded'], ['avg_hours_ready_to_live', 'Hours ready→live'], ['on_time_pct', 'Within SLA %'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
 
     const DataTable = ({ cols, rows, first = 'label', firstLabel = '' }) => !rows.length ? <p className="text-sm text-slate-400">No data in this period.</p> : (
       <div className="scroll-x"><table className="w-full text-sm">

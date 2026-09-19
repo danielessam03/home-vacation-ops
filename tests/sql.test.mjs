@@ -33,10 +33,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -157,6 +157,25 @@ r = await db.query(`select (select count(*) from ops_listings)::int l, (select c
 await asUser(D1);
 r = await db.query(`select (select count(*) from ops_profiles)::int p, (select count(*) from app_users)::int a, (select role from ops_profiles where email='admin@x.com') ceo_role`);
 ok('ops staff see colleagues via ops_profiles but still only their own app_users row; CEO defaults to admin', r.rows[0].p === 5 && r.rows[0].a === 1 && r.rows[0].ceo_role === 'admin', JSON.stringify(r.rows[0]));
+
+// ---- projects: own serial, P-LOC-###-S, website auto-ids (PRJ-…) ignored
+await asService();
+await db.exec(`insert into ops_wp_project_index (reference_code,url) values ('P-MG-929-S','https://x/p1'),('PRJ-013330','https://x/p2'),('P-314-01-S','https://x/p3')`);
+await asUser(D1);
+r = await db.query(`insert into ops_projects (name,location,entered_by,assigned_to,developer) values ('Red Hills','Sahl Hasheesh','${D1}','${D1}','Enza') returning *`);
+const PJ = r.rows[0];
+ok('project code = P-LOC-(last project serial + 1)-S, independent of unit serials', PJ.reference_code === 'P-SH-930-S', PJ.reference_code);
+ok('project completeness uses its own required list', PJ.completeness_pct === Math.floor(100 * 3 / 13) && PJ.missing_fields.includes('starting_price'), PJ.completeness_pct + '%');
+await expectErr('project cannot go ready while incomplete', `update ops_projects set status='ready_to_publish' where id='${PJ.id}'`, /complete/i);
+await db.exec(`update ops_projects set project_types='{Apartment}', unit_sizes='57-180', starting_price=5000000, currency='egp', down_payment='10%', delivery_date='2028', finishing='Fully Finished', facilities='{Pool}', selling_points='x' where id='${PJ.id}'`);
+await expectErr('staff cannot approve project media', `update ops_projects set media_uploaded=true where id='${PJ.id}'`, /Only the manager/);
+await asUser(M); await db.exec(`update ops_projects set media_uploaded=true where id='${PJ.id}'`); await asUser(D1);
+await db.exec(`update ops_projects set status='ready_to_publish' where id='${PJ.id}'`); await db.exec(`update ops_projects set status='published_claimed' where id='${PJ.id}'`);
+await asService(); await db.exec(`update ops_projects set status='verified_live', date_published_verified=now() where id='${PJ.id}'`);
+r = await db.query(`select m.code from kpi_entries k join kpi_metrics m on m.id=k.metric_id where k.external_id like 'ops:p%' order by 1`);
+ok('project KPIs reach HR: ready + live + on time', r.rows.map((x) => x.code).join() === 'ops_project_live,ops_project_on_time,ops_project_ready', r.rows.map((x) => x.code).join());
+await db.exec(`delete from kpi_entries where external_id like 'ops:p%'`);
+r = await db.query(`insert into ops_projects (name,location,entered_by) values ('Second','Magawish','${D1}') returning reference_code`); ok('next project serial', r.rows[0].reference_code === 'P-MG-931-S', r.rows[0].reference_code);
 
 // KPI bridge into HR
 await asUser(A);

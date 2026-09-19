@@ -8,7 +8,7 @@ const here = new URL('.', import.meta.url);
 const env = {
   SUPABASE_URL: `https://${fs.readFileSync(new URL('../.supabase_project', here), 'utf8').trim()}.supabase.co`,
   SUPABASE_SERVICE_KEY: fs.readFileSync('C:/Users/Essam/.hv-ops-secrets/.supabase_service_key.token', 'utf8').trim(),
-  WP_BASE_URL: 'https://home-vacation.com', WP_CPT: 'unit', MAX_PAGE_FETCHES: process.argv[2] || '600', WHATSAPP_ENABLED: 'false',
+  WP_BASE_URL: 'https://home-vacation.com', WP_CPT: 'unit', MAX_PAGE_FETCHES: process.argv[2] || '600', MAX_PROJECT_FETCHES: '100', WHATSAPP_ENABLED: 'false',
 };
 const realFetch = globalThis.fetch;
 globalThis.fetch = (url, opts = {}) => { const o = { ...opts }; delete o.cf; return realFetch(url, o); };   // "cf" is Workers-only

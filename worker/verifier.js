@@ -15,6 +15,7 @@
 
 const UA = 'HV-Ops-Verifier/1.0 (+https://home-vacation.com)';
 const REF_RE = /File\s*Ref\s*:?\s*([A-Z0-9]+(?:-[A-Z0-9]+)+)/i;
+const PROJECT_RE = /Project\s*ID\s*:?\s*([A-Z0-9]+(?:-[A-Z0-9]+)+)/i;      // projects: "Project ID: P-MG-929-S"
 const CPT_GUESSES = ['unit', 'units', 'properties', 'property', 'listings', 'listing'];
 
 export default {
@@ -122,10 +123,10 @@ const toIso = (s) => {
   return isNaN(d) ? null : d.toISOString();
 };
 
-function refFromText(text) {
+function refFromText(text, re = REF_RE) {
   if (!text) return null;
   const plain = String(text).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
-  const m = plain.match(REF_RE);
+  const m = plain.match(re);
   return m ? m[1].toUpperCase() : null;
 }
 
@@ -259,7 +260,10 @@ export async function runVerifier(env) {
       await sb(env, 'ops_wp_crawl_log?on_conflict=url', { method: 'POST', prefer: 'resolution=merge-duplicates', body: crawlRows });
     }
 
+    if (!blocked) { try { await crawlProjects(env, known, run, errors); } catch (e) { errors.push(`projects: ${e.message}`); } }
+
     run.listings_verified = await matchListings(env);
+    run.listings_verified += await matchListings(env, { table: 'ops_projects', index: 'ops_wp_project_index', channel: false, label: 'project' });
     run.alerts_created = await raiseAlerts(env);
   } catch (e) {
     errors.push(String(e.message || e));
@@ -270,16 +274,49 @@ export async function runVerifier(env) {
   return run;
 }
 
-// A listing is verified_live when its reference code appears in wp_listing_index.
-async function matchListings(env) {
-  const open = await sbAll(env, 'ops_listings?select=id,reference_code,entered_by,assigned_to&date_published_verified=is.null&status=not.in.(rejected,archived)');
+// Projects: one REST page lists them all (54 today); only new / modified project pages are fetched.
+async function crawlProjects(env, known, run, errors) {
+  const base = env.WP_BASE_URL.replace(/\/+$/, '');
+  const res = await wpFetch(`${base}/wp-json/wp/v2/${env.WP_PROJECT_CPT || 'project'}?per_page=100&orderby=modified&order=desc&_fields=id,link,date_gmt,modified_gmt`);
+  if (!res.ok) return;
+  const items = await res.json();
+  if (!Array.isArray(items)) return;
+  run.pages_listed += items.length;
+  const todo = items.map((it) => ({ url: it.link, published: toIso(it.date_gmt), modified: toIso(it.modified_gmt) })).filter((p) => {
+    const k = known.get(p.url);
+    return !k || (p.modified && (!k.wp_modified_at || new Date(p.modified) > new Date(k.wp_modified_at)));
+  }).slice(0, Number(env.MAX_PROJECT_FETCHES || 15));
+  const crawlRows = [], indexRows = [];
+  for (let i = 0; i < todo.length; i += 5) {
+    await Promise.all(todo.slice(i, i + 5).map(async (p) => {
+      try {
+        const r = await wpFetch(`${p.url}?hvv=${Date.now()}`);
+        run.pages_fetched++;
+        if (r.status >= 500) return;
+        const ref = r.ok ? refFromText(await r.text(), PROJECT_RE) : null;
+        crawlRows.push({ url: p.url, wp_published_at: p.published, wp_modified_at: p.modified, reference_code: ref, http_status: r.status, last_fetched_at: new Date().toISOString() });
+        if (ref) indexRows.push({ reference_code: ref, url: p.url, wp_published_at: p.published, method: 'rest+html', raw: { modified: p.modified } });
+      } catch (e) { if (e instanceof WpBlocked) throw e; errors.push(`${p.url}: ${e.message}`); }
+    }));
+  }
+  run.refs_found += indexRows.length;
+  if (indexRows.length) {
+    const uniq = [...new Map(indexRows.map((r) => [r.reference_code, r])).values()];
+    await sb(env, 'ops_wp_project_index?on_conflict=reference_code', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: uniq });
+  }
+  if (crawlRows.length) await sb(env, 'ops_wp_crawl_log?on_conflict=url', { method: 'POST', prefer: 'resolution=merge-duplicates', body: crawlRows });
+}
+
+// A listing (or project) is verified_live when its reference code appears in the matching website index.
+async function matchListings(env, { table = 'ops_listings', index = 'ops_wp_listing_index', channel = true, label = 'listing' } = {}) {
+  const open = await sbAll(env, `${table}?select=id,reference_code,entered_by,assigned_to&date_published_verified=is.null&status=not.in.(rejected,archived)`);
   if (!open.length) return 0;
   let verified = 0;
   const alerts = [];
   for (let i = 0; i < open.length; i += 80) {
     const chunk = open.slice(i, i + 80);
     const refs = chunk.map((l) => `"${l.reference_code.replace(/[^A-Z0-9-]/gi, '')}"`).join(',');
-    const found = await sb(env, `ops_wp_listing_index?select=reference_code,url,wp_published_at,first_seen_at&reference_code=in.(${refs})`);
+    const found = await sb(env, `${index}?select=reference_code,url,wp_published_at,first_seen_at&reference_code=in.(${refs})`);
     const byRef = new Map(found.map((f) => [f.reference_code, f]));
     for (const l of chunk) {
       const hit = byRef.get(l.reference_code);
@@ -287,11 +324,11 @@ async function matchListings(env) {
       // earliest of WordPress publish date and first sighting — never later than first_seen
       const times = [hit.wp_published_at, hit.first_seen_at].filter(Boolean).map((t) => new Date(t).getTime());
       const verifiedAt = new Date(Math.min(...times)).toISOString();
-      await sb(env, `ops_listings?id=eq.${l.id}`, { method: 'PATCH',
+      await sb(env, `${table}?id=eq.${l.id}`, { method: 'PATCH',
         body: { status: 'verified_live', date_published_verified: verifiedAt, website_url: hit.url } });
-      await sb(env, 'ops_listing_channels?on_conflict=listing_id,channel', { method: 'POST', prefer: 'resolution=merge-duplicates',
+      if (channel) await sb(env, 'ops_listing_channels?on_conflict=listing_id,channel', { method: 'POST', prefer: 'resolution=merge-duplicates',
         body: { listing_id: l.id, channel: 'website', status: 'published', url: hit.url, published_at: verifiedAt } });
-      alerts.push({ level: 'info', title: `${l.reference_code} verified live`, body: hit.url, entity_type: 'listing',
+      alerts.push({ level: 'info', title: `${l.reference_code} verified live`, body: hit.url, entity_type: label,
         entity_id: l.id, target_user: l.assigned_to || l.entered_by, dedupe_key: `verified:${l.id}` });
       verified++;
     }
@@ -337,6 +374,27 @@ async function raiseAlerts(env) {
         body: 'Marked as published but the verifier cannot find this File Ref on home-vacation.com.' };
       alerts.push({ ...a, target_role: 'manager', dedupe_key: `cnf:${l.id}:m` });
       alerts.push({ ...a, level: 'warning', target_user: who, dedupe_key: `cnf:${l.id}:u` });
+    }
+  }
+
+  const pset = await sb(env, 'ops_settings?key=eq.project_sla_hours&select=value');
+  const pcfg = { warn: 120, breach: 168, incomplete_alert: 48, claim_grace: 24, ...(pset[0] ? pset[0].value : {}) };
+  const projects = await sbAll(env, 'ops_projects?select=id,reference_code,name,status,entered_by,assigned_to,created_at,date_received,paused_seconds,'
+    + 'completeness_pct,missing_fields,date_published_claimed&date_published_verified=is.null&status=not.in.(rejected,archived,on_hold)');
+  for (const p of projects) {
+    const who = p.status === 'draft' ? p.entered_by : (p.assigned_to || p.entered_by);
+    const h = Math.max(0, (now - new Date(p.date_received).getTime()) / 36e5 - (p.paused_seconds || 0) / 3600);
+    const base = { entity_type: 'project', entity_id: p.id }; const tag = `${p.reference_code} (${p.name})`;
+    if (h >= pcfg.warn && h <= pcfg.breach) alerts.push({ ...base, level: 'warning', title: `Project at risk — ${tag}: ${Math.round(h)}h of ${pcfg.breach}h used`, target_user: who, dedupe_key: `psla1:${p.id}` });
+    if (h > pcfg.breach) {
+      const a = { ...base, level: 'critical', title: `Project SLA breached — ${tag} (${Math.round(h)}h)`, body: 'Still not verified live on the website.' };
+      alerts.push({ ...a, target_user: who, dedupe_key: `psla2:${p.id}:u` }, { ...a, target_role: 'manager', dedupe_key: `psla2:${p.id}:m` });
+    }
+    if (p.completeness_pct < 100 && now - new Date(p.created_at).getTime() > pcfg.incomplete_alert * 36e5)
+      alerts.push({ ...base, level: 'warning', title: `Project still incomplete — ${tag} (${p.completeness_pct}%)`, body: `Missing: ${(p.missing_fields || []).join(', ')}`, target_user: p.entered_by, dedupe_key: `pinc:${p.id}` });
+    if (p.status === 'published_claimed' && p.date_published_claimed && now - new Date(p.date_published_claimed).getTime() > pcfg.claim_grace * 36e5) {
+      const a = { ...base, level: 'critical', title: `Project claimed but NOT found on website — ${tag}`, body: 'The verifier cannot find this Project ID on home-vacation.com.' };
+      alerts.push({ ...a, target_role: 'manager', dedupe_key: `pcnf:${p.id}:m` }, { ...a, level: 'warning', target_user: who, dedupe_key: `pcnf:${p.id}:u` });
     }
   }
 

@@ -44,7 +44,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.5.0';
+    const APP_VERSION = 'v1.6.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -192,7 +192,7 @@
       tasks: 'M9 11l3 3 8-8M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h10', bell: 'M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9zm4 11a2 2 0 0 0 4 0',
       agency: 'M4 20V6l8-3v17M12 9l8 2v9M2 20h20M8 9h.01M8 13h.01M8 17h.01M16 14h.01M16 17h.01', chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
       report: 'M7 3h8l4 4v14H7zM14 3v5h5M10 13h6M10 17h6', cog: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm8 3l2-1.5-2-3.5-2.4.8a7 7 0 0 0-1.6-.9L15.5 4h-4l-.5 2.4a7 7 0 0 0-1.6.9L7 6.5 5 10l2 1.5a7 7 0 0 0 0 1L5 14l2 3.5 2.4-.8c.5.4 1 .7 1.6.9l.5 2.4h4l.5-2.4c.6-.2 1.1-.5 1.6-.9l2.4.8 2-3.5-2-1.5a7 7 0 0 0 0-1z',
-      more: 'M5 12h.01M12 12h.01M19 12h.01', plus: 'M12 5v14M5 12h14', x: 'M6 6l12 12M18 6L6 18', copy: 'M9 9h10v11H9zM5 15V4h10', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+      more: 'M5 12h.01M12 12h.01M19 12h.01', project: 'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 10h.01M15 10h.01', plus: 'M12 5v14M5 12h14', x: 'M6 6l12 12M18 6L6 18', copy: 'M9 9h10v11H9zM5 15V4h10', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
       check: 'M5 12l5 5 9-10', back: 'M15 5l-7 7 7 7', upload: 'M12 16V4M7 9l5-5 5 5M4 20h16', print: 'M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
     };
     const Icon = ({ name, className = 'w-5 h-5' }) => (
@@ -276,9 +276,9 @@
         <button className="px-2.5 py-2 text-slate-600" onClick={() => onChange(addMonths(value, 1))} aria-label="Next month">›</button>
       </div>
     );
-    const SlaChip = ({ listing }) => {
+    const SlaChip = ({ listing, slaCfg }) => {
       const { cfg, now } = useApp();
-      const s = slaOf(listing, cfg.sla_hours, now);
+      const s = slaOf(listing, slaCfg || cfg.sla_hours, now);      // projects pass their own, longer SLA
       if (s.state === 'none') return null;
       const st = SLA_STYLE[s.state];
       const text = s.verified ? `Live in ${fmtHours(s.hours)}` : s.onHold ? `Paused · ${fmtHours(s.hours)}` : s.remaining >= 0 ? `${fmtHours(s.remaining)} left` : `${fmtHours(-s.remaining)} over`;
@@ -357,6 +357,8 @@
         tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
         deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,
         shoots_completed: shootDone.length,
+        projects_entered: (data.projects || []).filter((p) => p.entered_by === user.id && p.status !== 'archived' && inRange(p.date_received, range)).length,
+        projects_uploaded: (data.projects || []).filter((p) => ['published_claimed', 'verified_live'].includes(p.status) && (p.published_claimed_by || p.assigned_to || p.entered_by) === user.id && inRange(p.date_received, range)).length,
         media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_uploaded === true && l.media_edited === true).length,
       };
     }
@@ -911,6 +913,247 @@
     };
 
     // =========================================================================================
+    // PROJECTS — developer compounds / resorts. Same pipeline as units: entry -> ready -> upload -> verified live.
+    // Code: P-LOC-SERIAL-S (own serial, separate from units). Staff paste it into the WordPress "Project ID" field.
+    // =========================================================================================
+    const PROJECT_LABEL = {
+      name: 'Project name', developer: 'Developer', location: 'Location', project_types: 'Unit types in the project', unit_sizes: 'Unit sizes (m²)',
+      bedrooms: 'Bedrooms', starting_price: 'Starting price', currency: 'Currency', down_payment: 'Down payment', installments: 'Installments',
+      delivery_date: 'Delivery date', finishing: 'Finishing', facilities: 'Facilities', selling_points: 'Selling points / description', is_exclusive: 'Exclusive',
+      media_uploaded: 'Photos & brochure ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited',
+      source_name: 'Developer contact person', source_contact: 'Contact phone / email', date_received: 'Date received (SLA start)', assigned_to: 'Uploader (puts it online)',
+    };
+    const PROJECT_GROUPS = [
+      ['Project', ['name', 'developer', 'location', 'project_types', 'date_received']],
+      ['Units & delivery', ['unit_sizes', 'bedrooms', 'delivery_date', 'finishing']],
+      ['Price & payment plan', ['starting_price', 'currency', 'down_payment', 'installments', 'is_exclusive']],
+      ['Marketing', ['facilities', 'selling_points']],
+      ['Media', ['media_uploaded', 'media_has_logo', 'media_edited']],
+      ['Developer contact', ['source_name', 'source_contact', 'assigned_to']],
+    ];
+    const PROJECT_BOOLS = ['is_exclusive', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const PROJECT_WIDE = ['name', 'project_types', 'facilities', 'selling_points', 'unit_sizes', 'date_received'];
+
+    function projectCompleteness(row, required) {
+      const req = (required || []).filter((f) => f in PROJECT_LABEL);
+      const missing = req.filter((f) => {
+        const v = row[f];
+        if (v == null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length)) return true;
+        if (f === 'starting_price' && !(Number(v) > 0)) return true;
+        if (f === 'media_uploaded' && v !== true) return true;
+        return false;
+      });
+      return { pct: req.length ? Math.floor((100 * (req.length - missing.length)) / req.length) : 100, missing };
+    }
+
+    const ProjectForm = ({ project, onClose, onSaved }) => {
+      const { me, cfg, data, save, toast } = useApp();
+      const isEdit = !!project;
+      const [f, setF] = useState(() => ({ project_types: [], facilities: [], date_received: new Date().toISOString(), ...(project || {}), starting_price: project && project.starting_price != null ? String(project.starting_price) : '' }));
+      const [busy, setBusy] = useState(false);
+      const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const normalized = { ...f, starting_price: f.starting_price === '' ? null : Number(f.starting_price) };
+      const comp = projectCompleteness(normalized, cfg.project_required_fields);
+      const hard = ['name', 'location', 'date_received'].filter((k) => !normalized[k] || (typeof normalized[k] === 'string' && !normalized[k].trim()));
+      const bad = (k) => comp.missing.includes(k) || hard.includes(k);
+      const dup = !isEdit && f.name && data.projects.find((p) => p.name.trim().toLowerCase() === f.name.trim().toLowerCase());
+
+      const control = (k) => {
+        if (k === 'location') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={Object.keys(cfg.location_codes || {}).sort()} disabled={isEdit} />;
+        if (k === 'currency') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.currencies || ['EUR', 'USD', 'EGP']} />;
+        if (k === 'finishing') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.finishing_types || []} />;
+        if (k === 'assigned_to') return <Select value={f[k]} onChange={(v) => set(k, v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} placeholder="Default uploader" />;
+        if (k === 'date_received') return <input type="datetime-local" className={inputCls(bad(k))} value={toLocalInput(f[k])} disabled={isEdit && me.role !== 'admin'} onChange={(e) => set(k, fromLocalInput(e.target.value))} />;
+        if (k === 'project_types') return <FacilitiesInput bad={bad(k)} value={f.project_types || []} onChange={(v) => set(k, v)} options={cfg.project_types} />;
+        if (k === 'facilities') return <FacilitiesInput bad={bad(k)} value={f.facilities || []} onChange={(v) => set(k, v)} options={cfg.facilities} />;
+        if (k === 'selling_points') return <textarea rows={4} className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
+        if (k === 'media_uploaded' && !isMgr(me)) return <div className={`rounded-lg border px-3 py-2 text-sm ${f[k] === true ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>{f[k] === true ? 'Yes — approved by the manager' : 'Waiting for the manager to review the media'}</div>;
+        if (PROJECT_BOOLS.includes(k)) return <TriState bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} />;
+        if (k === 'starting_price') return <input type="number" inputMode="decimal" min="0" className={inputCls(bad(k))} value={f[k]} onChange={(e) => set(k, e.target.value)} />;
+        const ph = { unit_sizes: '57 – 180 m² (Studios, 1BR, 2BR)', bedrooms: 'Studio, 1–3 BR', down_payment: '10%', installments: '7 years, quarterly', delivery_date: 'December 2027 / 3 years from contract / Available' }[k];
+        return <input className={inputCls(bad(k))} placeholder={ph || ''} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
+      };
+
+      const submit = async () => {
+        if (hard.length) { toast(`Needed to save: ${hard.map((k) => PROJECT_LABEL[k]).join(', ')}`, 'error'); return; }
+        setBusy(true);
+        const payload = {};
+        PROJECT_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
+        if (!isMgr(me)) delete payload.media_uploaded;
+        if (isEdit) { delete payload.location; if (me.role !== 'admin') delete payload.date_received; }
+        else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
+        const row = await save('projects', payload, isEdit ? project.id : null);
+        setBusy(false);
+        if (!row) return;
+        toast(isEdit ? 'Project saved' : `Created ${row.reference_code}`);
+        onSaved(row);
+      };
+
+      return (
+        <Modal wide title={isEdit ? `Edit ${project.reference_code}` : 'New project'} onClose={onClose} footer={<>
+          <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
+          <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate Project ID'}</Btn></>}>
+          <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
+            <div className="mb-1.5 flex items-center justify-between text-sm"><span className="font-semibold text-slate-800">Completeness {comp.pct}%</span>{comp.missing.length > 0 && <Badge className="bg-rose-600 text-white">{comp.missing.length} missing</Badge>}</div>
+            <Meter value={comp.pct} />
+          </div>
+          {dup && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Possible duplicate: {dup.reference_code} has the same name.</div>}
+          {isEdit && <p className="mb-3 text-xs text-slate-500">The location is part of the Project ID and cannot change after creation.</p>}
+          {PROJECT_GROUPS.map(([g, keys]) => (
+            <fieldset key={g} className="mb-5">
+              <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
+              {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos, renders and brochures stay on the company intranet. The manager reviews them there and marks them ready.</p>}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {keys.map((k) => <Field key={k} label={PROJECT_LABEL[k]} bad={bad(k)} className={['project_types', 'facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : PROJECT_WIDE.includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+              </div>
+            </fieldset>
+          ))}
+        </Modal>
+      );
+    };
+
+    const ProjectsPage = () => {
+      const { data, cfg, now, go, nameOf } = useApp();
+      const [q, setQ] = useState(''); const [status, setStatus] = useState(null); const [form, setForm] = useState(false);
+      const rows = useMemo(() => {
+        const s = q.trim().toLowerCase();
+        return data.projects.map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter(({ p }) => {
+          if (!status && p.status === 'archived') return false;
+          if (status && p.status !== status) return false;
+          return !s || `${p.reference_code} ${p.name} ${p.developer || ''} ${p.location}`.toLowerCase().includes(s);
+        }).sort((a, b) => new Date(b.p.date_received) - new Date(a.p.date_received));
+      }, [data.projects, q, status, cfg.project_sla_hours, now]);
+      const exportCsv = () => downloadCSV(`hv-projects-${ymd(new Date())}.csv`,
+        ['project_id', 'name', 'developer', 'location', 'status', 'starting_price', 'currency', 'delivery_date', 'completeness_pct', 'date_received', 'date_published_verified', 'entered_by', 'uploaded_by', 'website_url'],
+        rows.map(({ p }) => [p.reference_code, p.name, p.developer, p.location, p.status, p.starting_price, p.currency, p.delivery_date, p.completeness_pct, p.date_received, p.date_published_verified, nameOf(p.entered_by), nameOf(p.published_claimed_by), p.website_url]));
+      return (
+        <div>
+          <PageHeader title="Projects" sub={`${rows.length} shown · Project ID = P-location-serial-S`}>
+            <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
+            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New project</Btn>
+          </PageHeader>
+          <div className="no-print mb-3 flex gap-2">
+            <input className={inputCls()} placeholder="Search Project ID, name, developer or location…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="w-48 shrink-0"><Select value={status} onChange={setStatus} placeholder="All statuses" options={Object.entries(LISTING_STATUS).map(([k, v]) => [k, v[0]])} /></div>
+          </div>
+          {!rows.length ? <Empty>No projects yet. Add the first one with “New project”.</Empty> : (
+            <div className="grid gap-2 lg:grid-cols-2">
+              {rows.map(({ p, s }) => (
+                <Card key={p.id} className={`cursor-pointer border-l-4 p-3 hover:border-brand-500 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`} onClick={() => go('project', p.id)}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0"><div className="font-mono text-sm font-bold text-slate-900">{p.reference_code}</div><div className="truncate text-sm font-medium text-slate-800">{p.name}</div><div className="truncate text-xs text-slate-500">{p.developer || 'Developer —'} · {p.location}</div></div>
+                    <SlaChip listing={p} slaCfg={cfg.project_sla_hours} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <StatusBadge status={p.status} />
+                    {p.completeness_pct < 100 && <Badge className="bg-rose-600 text-white">{p.completeness_pct}% · {(p.missing_fields || []).length} missing</Badge>}
+                    {s.claimedNotFound && <Badge className="bg-rose-600 text-white">Claimed, not found</Badge>}
+                    <span className="ml-auto text-xs text-slate-500">{p.starting_price ? `from ${money(p.starting_price, p.currency)}` : ''}</span>
+                  </div>
+                  <div className="mt-1.5 text-xs text-slate-600">Entered by <b className="text-slate-900">{nameOf(p.entered_by)}</b> · {fmtDate(p.date_received)}</div>
+                </Card>
+              ))}
+            </div>
+          )}
+          {form && <ProjectForm onClose={() => setForm(false)} onSaved={(row) => { setForm(false); go('project', row.id); }} />}
+        </div>
+      );
+    };
+
+    const ProjectDetail = ({ id }) => {
+      const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
+      const p = data.projects.find((x) => x.id === id);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false);
+      const mgr = isMgr(me);
+      useEffect(() => {
+        if (!mgr || !p) return;
+        sbc.from(tbl('audit_log')).select('*').eq('record_id', id).order('changed_at', { ascending: false }).limit(200).then(({ data: rows }) => setAudit(rows || []));
+      }, [id, p && p.updated_at]);
+      if (!p) return <Empty>Project not found.</Empty>;
+      const s = slaOf(p, cfg.project_sla_hours, now);
+      const canEdit = mgr || p.entered_by === me.id || p.assigned_to === me.id;
+      const setStatus = (status, extra = {}) => save('projects', { status, ...extra }, p.id).then((row) => { if (row) toast(`Status: ${LISTING_STATUS[status][0]}`); return row; });
+      const copy = async () => { try { await navigator.clipboard.writeText(p.reference_code); } catch (e) { const t = document.createElement('textarea'); t.value = p.reference_code; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } setCopied(true); setTimeout(() => setCopied(false), 1500); };
+      return (
+        <div>
+          <button className="no-print mb-3 inline-flex items-center gap-1 text-sm text-brand-700" onClick={() => go('projects')}><Icon name="back" className="h-4 w-4" />All projects</button>
+          <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn></div>
+                <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress <b>Project ID</b> field. If it is left empty the website invents a PRJ-… number and the project can never be verified.</p>
+                <h2 className="mt-2 text-base font-semibold text-slate-800">{p.name}</h2>
+                <div className="text-sm text-slate-700">{p.developer || 'Developer —'} · {p.location}</div>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500"><span>Entered by <b className="text-slate-800">{nameOf(p.entered_by)}</b> · {fmtDateTime(p.created_at)}</span>{p.published_claimed_by && <span>Uploaded to website by <b className="text-slate-800">{nameOf(p.published_claimed_by)}</b> · {fmtDateTime(p.date_published_claimed)}</span>}{p.media_approved_by && <span>Media approved by <b className="text-slate-800">{nameOf(p.media_approved_by)}</b></span>}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5"><StatusBadge status={p.status} /><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></div>
+            </div>
+            {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(p.date_published_claimed)} but the verifier cannot find this Project ID on the website.</div>}
+            {p.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {p.hold_reason}</div>}
+            {p.status === 'rejected' && <div className="mt-3 rounded-lg bg-rose-100 p-2.5 text-sm text-rose-900">Rejected: {p.rejection_reason}</div>}
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-xs"><span className="font-medium text-slate-700">Completeness {p.completeness_pct}%</span>{p.completeness_pct < 100 && <span className="font-medium text-rose-700">{(p.missing_fields || []).length} missing</span>}</div>
+              <Meter value={p.completeness_pct} />
+              {p.completeness_pct < 100 && <div className="mt-2 flex flex-wrap gap-1">{(p.missing_fields || []).map((m) => <Badge key={m} className="bg-rose-100 text-rose-800">{PROJECT_LABEL[m] || m}</Badge>)}</div>}
+            </div>
+            {canEdit && (
+              <div className="no-print mt-4 flex flex-wrap gap-2">
+                {p.status !== 'archived' && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
+                {p.status === 'draft' && <Btn disabled={p.completeness_pct < 100} onClick={() => setStatus('ready_to_publish')}>Ready to publish</Btn>}
+                {p.status === 'ready_to_publish' && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
+                {p.status === 'ready_to_publish' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Back to draft</Btn>}
+                {['draft', 'ready_to_publish', 'published_claimed'].includes(p.status) && <Btn kind="ghost" onClick={() => setReason('hold')}>Put on hold</Btn>}
+                {p.status === 'on_hold' && <Btn onClick={() => setStatus(p.status_before_hold || 'draft')}>Resume (restart clock)</Btn>}
+                {mgr && !['rejected', 'archived', 'verified_live'].includes(p.status) && <Btn kind="danger" onClick={() => setReason('reject')}>Reject</Btn>}
+                {mgr && p.status === 'rejected' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Reopen as draft</Btn>}
+                {mgr && p.status !== 'archived' && <Btn kind="ghost" onClick={() => { if (confirm('Archive this project? It is hidden, never deleted.')) setStatus('archived'); }}>Archive</Btn>}
+              </div>
+            )}
+          </Card>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="space-y-4 lg:col-span-2">
+              {PROJECT_GROUPS.map(([g, keys]) => (
+                <Card key={g} className="p-4">
+                  <h3 className="mb-2 text-sm font-semibold text-brand-800">{g}</h3>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+                    {keys.map((k) => {
+                      const v = p[k]; const miss = (p.missing_fields || []).includes(k);
+                      const text = k === 'assigned_to' ? nameOf(v) : k === 'date_received' ? fmtDateTime(v) : k === 'starting_price' ? money(v, p.currency) : PROJECT_BOOLS.includes(k) ? (v == null ? null : v ? 'Yes' : 'No') : Array.isArray(v) ? v.join(', ') : v;
+                      return <div key={k} className={['project_types', 'facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ''}><dt className="text-xs text-slate-500">{PROJECT_LABEL[k]}</dt><dd className={miss ? 'font-medium text-rose-700' : 'whitespace-pre-wrap break-words text-slate-900'}>{miss ? 'Missing' : text == null || text === '' ? '—' : String(text)}</dd></div>;
+                    })}
+                  </dl>
+                </Card>
+              ))}
+            </div>
+            <div className="space-y-4">
+              <Card className="p-4">
+                <h3 className="mb-3 text-sm font-semibold text-brand-800">SLA timeline</h3>
+                <ol className="space-y-2 border-l-2 border-slate-200 pl-3 text-sm">
+                  {[['Info received — clock starts', p.date_received], ['Entered complete — ready to publish', p.date_ready], ['Marked as published by staff', p.date_published_claimed], ['Verified live on website — clock stops', p.date_published_verified]].map(([label, at]) => <li key={label}><div className={at ? 'text-slate-900' : 'text-slate-400'}>{label}</div><div className="text-xs text-slate-500">{at ? fmtDateTime(at) : 'pending'}</div></li>)}
+                </ol>
+                <div className="mt-3 text-sm">{s.verified ? <>Hours to publish: <b className="num">{r1(s.hours)}</b> — {s.onTime ? <span className="text-emerald-700">within {s.breach}h</span> : <span className="text-rose-700">late</span>}</> : <>Elapsed: <b className="num">{fmtHours(s.hours)}</b> of {s.breach}h</>}</div>
+                {p.website_url && <a className="mt-2 inline-flex items-center gap-1 text-sm text-brand-700 underline" href={p.website_url} target="_blank" rel="noreferrer"><Icon name="link" className="h-4 w-4" />View on website</a>}
+              </Card>
+              {mgr && (
+                <Card className="p-4">
+                  <h3 className="mb-2 text-sm font-semibold text-brand-800">Audit trail</h3>
+                  {!audit ? <p className="text-sm text-slate-500">Loading…</p> : !audit.length ? <p className="text-sm text-slate-500">No changes recorded.</p> : (
+                    <ul className="max-h-80 space-y-2 overflow-y-auto text-xs">{audit.map((a) => (
+                      <li key={a.id} className="border-b border-slate-100 pb-1.5"><div className="text-slate-500">{fmtDateTime(a.changed_at)} · {a.changed_by ? nameOf(a.changed_by) : 'System / verifier'}</div>
+                        {a.action === 'insert' ? <div className="text-slate-800">Created</div> : <div className="break-words text-slate-800"><b>{PROJECT_LABEL[a.field_name] || a.field_name}</b>: <span className="text-rose-700 line-through">{a.old_value || '∅'}</span> → <span className="text-emerald-700">{a.new_value || '∅'}</span></div>}</li>))}</ul>
+                  )}
+                </Card>
+              )}
+            </div>
+          </div>
+          {edit && <ProjectForm project={p} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
+          {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
+          {reason === 'reject' && <ReasonModal kind="danger" title="Reject project" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
+        </div>
+      );
+    };
+
+    // =========================================================================================
     // TASKS — kanban on desktop, list on phone. Staff move To do -> Doing -> Review; a manager approves.
     // =========================================================================================
     const isOverdue = (t, now) => t.due_at && !['done', 'cancelled'].includes(t.status) && new Date(t.due_at).getTime() < now;
@@ -1232,7 +1475,7 @@
     // =========================================================================================
     // a data-entry person only sees the stage(s) they actually work in: entry (Sally) and/or upload (Lucy)
     const kpiDefsForUser = (cfg, role, k) => {
-      const active = { entry: k.listings_entered > 0, upload: k.listings_uploaded > 0 || k.waiting_upload > 0 };
+      const active = { entry: k.listings_entered > 0 || k.projects_entered > 0, upload: k.listings_uploaded > 0 || k.waiting_upload > 0 || k.projects_uploaded > 0 };
       const any = active.entry || active.upload;
       return kpiDefsFor(cfg, role).filter((d) => !d.part || !any || active[d.part]);
     };
@@ -1289,8 +1532,8 @@
           <PageHeader title="KPIs" sub="Value / target. Green = target met."><MonthPicker value={month} onChange={setMonth} /></PageHeader>
           <div className="space-y-4">
             {mgr && <p className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
-            {mgr && board('Stage 1 — data & photos entered', (r) => r.k.listings_entered > 0, 'listings_entered', defs.filter((d) => d.part === 'entry'))}
-            {mgr && board('Stage 2 — uploaded online', (r) => r.k.listings_uploaded > 0 || r.k.waiting_upload > 0, 'listings_uploaded', defs.filter((d) => d.part === 'upload'))}
+            {mgr && board('Stage 1 — data & photos entered', (r) => r.k.listings_entered > 0 || r.k.projects_entered > 0, 'listings_entered', defs.filter((d) => d.part === 'entry'))}
+            {mgr && board('Stage 2 — uploaded online', (r) => r.k.listings_uploaded > 0 || r.k.waiting_upload > 0 || r.k.projects_uploaded > 0, 'listings_uploaded', defs.filter((d) => d.part === 'upload'))}
             {mgr && board('Marketing', (r) => r.p.role === 'marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
             {rows.map(({ p, k }) => (
               <Card key={p.id} className="p-4">
@@ -1349,6 +1592,8 @@
       if (!mgr) {
         const incomplete = mineL.filter((l) => l.completeness_pct < 100 && l.entered_by === me.id);
         const toUpload = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id);
+        const projToUpload = data.projects.filter((p) => p.status === 'ready_to_publish' && p.assigned_to === me.id);
+        const myProjects = data.projects.filter((p) => ['draft', 'on_hold'].includes(p.status) && p.entered_by === me.id);
         const weekEnd = ymd(addDays(new Date(), 7));
         const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
         const needMedia = open.filter((l) => l.media_uploaded !== true || l.media_edited !== true);
@@ -1358,6 +1603,8 @@
             <div className="space-y-4">
               {kpiTiles}
               <div className="grid gap-4 lg:grid-cols-2">
+                {me.role === 'data_entry' && projToUpload.length > 0 && <Section title="Projects ready — waiting for me to upload" count={projToUpload.length} tone="red">{projToUpload.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
+                {me.role === 'data_entry' && myProjects.length > 0 && <Section title="My projects in progress" count={myProjects.length}>{myProjects.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {p.completeness_pct}% complete</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
                 {me.role === 'data_entry' && toUpload.length > 0 && <Section title="Ready — waiting for me to upload" count={toUpload.length} tone="red">{limitList(withSla(toUpload), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />, '')}</Section>}
                 {me.role === 'data_entry' && <Section title="My SLA clocks" count={mineL.length}>{limitList(withSla(mineL), ({ l }) => <ListingLine key={l.id} l={l} />, 'Nothing in progress.')}</Section>}
                 {me.role === 'data_entry' && <Section title="My incomplete listings" count={incomplete.length} tone="red">{limitList(incomplete, (l) => <ListingLine key={l.id} l={l} note={`Missing: ${(l.missing_fields || []).map((m) => FIELD_LABEL[m] || m).join(', ')}`} />, 'All complete.')}</Section>}
@@ -1394,6 +1641,7 @@
               <Tile label="Waiting approval" value={review.length + submitted.length} onClick={() => go('tasks')} />
               <Tile label="Tasks overdue" value={overdue.length} tone={overdue.length ? 'red' : null} onClick={() => go('tasks')} />
             </div>
+            {(() => { const bad = data.projects.filter((p) => !['archived', 'rejected', 'verified_live', 'on_hold'].includes(p.status)).map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter((x) => x.s.state === 'red' || x.s.claimedNotFound); return bad.length ? <Section title="Projects — SLA breached or claimed but not found" count={bad.length} tone="red">{bad.map(({ p, s }) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {s.claimedNotFound ? 'claimed, not found' : LISTING_STATUS[p.status][0]} · {nameOf(p.assigned_to || p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section> : null; })()}
             <div className="grid gap-4 lg:grid-cols-2">
               <Section title="Breached SLAs (> 72h, not live)" count={breached.length} tone="red">{limitList(breached, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.assigned_to || l.entered_by)} · ${LISTING_STATUS[l.status][0]}`} />, 'No breaches.')}</Section>
               <Section title="Claimed published — NOT found on website" count={cnf.length} tone="red">{limitList(cnf, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} claimed ${fmtDateTime(l.date_published_claimed)}`} />, 'Every claim has been verified.')}</Section>
@@ -1439,7 +1687,7 @@
       channel: ['By channel', [['total', 'Listings'], ['published', 'Published'], ['in_progress', 'In progress'], ['rejected', 'Rejected'], ['coverage_pct', 'Coverage %']]],
       agency: ['By agency', [['planned', 'Planned'], ['delivered', 'Delivered'], ['delivery_rate', 'Delivery %'], ['on_time_pct', 'On time %'], ['revision_rate', 'Revision %'], ['leads', 'Leads'], ['cpl', 'Cost / lead']]],
     };
-    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Entered'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_ready', 'Hours to ready'], ['rejected_count', 'Rejected'], ['listings_uploaded', 'Uploaded'], ['avg_hours_ready_to_live', 'Hours ready→live'], ['on_time_pct', 'Within SLA %'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
+    const KPI_COLS = [['name', 'Name'], ['projects_entered', 'Projects in'], ['projects_uploaded', 'Projects up'], ['listings_entered', 'Entered'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_ready', 'Hours to ready'], ['rejected_count', 'Rejected'], ['listings_uploaded', 'Uploaded'], ['avg_hours_ready_to_live', 'Hours ready→live'], ['on_time_pct', 'Within SLA %'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
 
     const DataTable = ({ cols, rows, first = 'label', firstLabel = '' }) => !rows.length ? <p className="text-sm text-slate-400">No data in this period.</p> : (
       <div className="scroll-x"><table className="w-full text-sm">
@@ -1527,7 +1775,7 @@
         const m = new Map(saved.map((s) => [s.id, s]));
         setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
       };
-      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
+      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
       return (
         <div>
           <PageHeader title="Alerts" sub="Raised hourly by the verifier worker">
@@ -1673,6 +1921,7 @@
     const SettingsPage = () => {
       const { cfg, data, saveSetting } = useApp();
       const [tab, setTab] = useState('users');
+      const [preq, setPreq] = useState(cfg.project_required_fields || []); const [psla, setPsla] = useState(cfg.project_sla_hours || {});
       const [sla, setSla] = useState(cfg.sla_hours || {}); const [req, setReq] = useState(cfg.required_fields || []); const [chans, setChans] = useState(cfg.default_channels || []); const [labels, setLabels] = useState(cfg.portal_labels || {});
       const candidates = Object.keys(FIELD_LABEL).filter((k) => !['date_received', 'source_type', 'source_name', 'assigned_to'].includes(k));
       return (
@@ -1687,6 +1936,9 @@
               <p className="mb-3 text-sm text-slate-500">Ticked fields count toward 100% completeness ({req.length} selected). A listing cannot move to Ready to publish until all are filled. Existing listings are re-scored the next time they are saved.</p>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">{candidates.map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={req.includes(k)} onChange={() => setReq(req.includes(k) ? req.filter((x) => x !== k) : [...req, k])} />{FIELD_LABEL[k]}</label>)}</div>
               <div className="mt-3"><Btn onClick={() => saveSetting('required_fields', req)}>Save</Btn></div>
+              <h3 className="mt-6 border-t border-slate-200 pt-4 text-sm font-semibold text-brand-800">Projects — required fields ({preq.length} selected)</h3>
+              <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">{Object.keys(PROJECT_LABEL).filter((k) => !['date_received', 'assigned_to'].includes(k)).map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={preq.includes(k)} onChange={() => setPreq(preq.includes(k) ? preq.filter((x) => x !== k) : [...preq, k])} />{PROJECT_LABEL[k]}</label>)}</div>
+              <div className="mt-3"><Btn onClick={() => saveSetting('project_required_fields', preq)}>Save project fields</Btn></div>
             </Card>
           )}
           {tab === 'sla' && (
@@ -1695,6 +1947,9 @@
                 {[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={sla[k] == null ? '' : sla[k]} onChange={(e) => setSla({ ...sla, [k]: e.target.value })} /></Field>)}
               </div>
               <div className="mt-3"><Btn onClick={() => saveSetting('sla_hours', Object.fromEntries(Object.entries(sla).map(([k, v]) => [k, Number(v)])))}>Save</Btn></div>
+              <h3 className="mt-6 border-t border-slate-200 pt-4 text-sm font-semibold text-brand-800">Projects — SLA (hours from received to live on the website)</h3>
+              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">{[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={psla[k] == null ? '' : psla[k]} onChange={(e) => setPsla({ ...psla, [k]: e.target.value })} /></Field>)}</div>
+              <div className="mt-3"><Btn onClick={() => saveSetting('project_sla_hours', Object.fromEntries(Object.entries(psla).map(([k, v]) => [k, Number(v)])))}>Save project SLA</Btn></div>
               <div className="mt-5 max-w-sm border-t border-slate-200 pt-4"><Field label="Default uploader — every new listing is handed to this person to put online"><Select value={cfg.default_uploader || null} placeholder="Nobody (stays with the person who entered it)" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} onChange={(v) => saveSetting('default_uploader', v)} /></Field></div>
             </Card>
           )}
@@ -1706,7 +1961,7 @@
               <div className="mt-3"><Btn onClick={async () => { await saveSetting('default_channels', chans); await saveSetting('portal_labels', labels); }}>Save</Btn></div>
             </Card>
           )}
-          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /></div>}
+          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="project_types" title="Project — unit types" /><ListEditor settingKey="finishing_types" title="Project — finishing options" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /></div>}
           {tab === 'metrics' && <MetricDefsEditor />}
           {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
           {tab === 'verifier' && <VerifierTab />}
@@ -1776,7 +2031,7 @@
       profiles: { order: 'full_name' }, listings: { order: 'date_received', desc: true }, listing_channels: { order: 'updated_at', desc: true }, tasks: { order: 'created_at', desc: true },
       recurring_templates: { order: 'created_at' }, agencies: { order: 'display_name' }, agency_deliverables: { order: 'due_date' }, agency_metrics: { order: 'period_month', desc: true },
       kpi_targets: { order: 'period_month', desc: true }, alerts: { order: 'created_at', desc: true, max: 300 }, settings: { order: 'key' }, report_snapshots: { order: 'created_at', desc: true, max: 100 },
-      verifier_runs: { order: 'started_at', desc: true, max: 25 },
+      verifier_runs: { order: 'started_at', desc: true, max: 25 }, projects: { order: 'date_received', desc: true },
     };
     const EMPTY = Object.fromEntries(Object.keys(TABLES).map((t) => [t, []]));
 
@@ -1792,6 +2047,7 @@
 
     const NAV = [
       ['dashboard', 'Home', 'home', () => true], ['listings', 'Listings', 'list', () => true], ['tasks', 'Tasks', 'tasks', () => true], ['alerts', 'Alerts', 'bell', () => true],
+      ['projects', 'Projects', 'project', () => true],
       ['agencies', 'Agencies', 'agency', (me) => me.role !== 'data_entry'], ['kpis', 'KPIs', 'chart', () => true], ['reports', 'Reports', 'report', (me) => isMgr(me)], ['settings', 'Settings', 'cog', (me) => me.role === 'admin'],
     ];
 
@@ -1839,7 +2095,7 @@
       // the verifier changes data server-side: refresh the moving tables every 3 min and when the tab regains focus
       useEffect(() => {
         if (!me) return;
-        const refresh = () => ['listings', 'listing_channels', 'tasks', 'alerts'].forEach(reloadTable);
+        const refresh = () => ['listings', 'listing_channels', 'projects', 'tasks', 'alerts'].forEach(reloadTable);
         const t1 = setInterval(() => setNow(Date.now()), 60000); const t2 = setInterval(refresh, 180000);
         const onVis = () => { if (!document.hidden) { setNow(Date.now()); refresh(); } };
         document.addEventListener('visibilitychange', onVis);
@@ -1880,10 +2136,10 @@
 
       const nav = NAV.filter((n) => n[3](me));
       const unread = data.alerts.filter((a) => !a.is_read); const critical = unread.filter((a) => a.level === 'critical');
-      const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' ? route.page : 'dashboard';
+      const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' || route.page === 'project' ? route.page : 'dashboard';
       const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
       const navBtn = (n, mobile) => {
-        const active = page === n[0] || (n[0] === 'listings' && page === 'listing'); const count = n[0] === 'alerts' ? unread.length : 0;
+        const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : 0;
         return mobile ? (
           <button key={n[0]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
         ) : (
@@ -1914,6 +2170,8 @@
                 {page === 'dashboard' && <Dashboard />}
                 {page === 'listings' && <ListingsPage />}
                 {page === 'listing' && <ListingDetail key={route.id} id={route.id} />}
+                {page === 'projects' && <ProjectsPage />}
+                {page === 'project' && <ProjectDetail key={route.id} id={route.id} />}
                 {page === 'tasks' && <TasksPage />}
                 {page === 'agencies' && <AgenciesPage />}
                 {page === 'kpis' && <KpisPage />}

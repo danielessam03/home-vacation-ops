@@ -33,10 +33,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -61,7 +61,7 @@ await asUser(D1);
 r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,bedrooms) values ('Hadaba','Apartment','sale','owner','Mr X','${D1}',2) returning *`);
 const L = r.rows[0];
 ok('ref code generated LOC-TYPE-SERIAL-S above site max', L.reference_code === 'HD-A-2501-S', L.reference_code);
-ok('completeness computed', L.completeness_pct === Math.floor(100 * 4 / 22) && L.missing_fields.includes('price') && !L.missing_fields.includes('bedrooms'), `${L.completeness_pct}% missing=${L.missing_fields.length}`);
+ok('completeness computed', L.completeness_pct === Math.floor(100 * 4 / 18) && L.missing_fields.includes('price') && !L.missing_fields.includes('bedrooms'), `${L.completeness_pct}% missing=${L.missing_fields.length}`);
 r = await db.query(`select channel from ops_listing_channels where listing_id='${L.id}' order by 1`);
 ok('3 default channels created', r.rows.length === 3, r.rows.map((x) => x.channel).join(','));
 await expectErr('cannot go ready_to_publish while incomplete', `update ops_listings set status='ready_to_publish' where id='${L.id}'`, /complete/i);
@@ -75,9 +75,11 @@ await expectErr('cannot insert as someone else (RLS)', `insert into ops_listings
 await expectErr('DELETE revoked', `delete from ops_listings where id='${L.id}'`, /permission denied/);
 
 // fill everything -> 100% -> ready -> claimed
-await db.exec(`update ops_listings set title='T', area_sqm=80, building_levels=4, floor=2, bathrooms=1, balconies=1, furnished=false, media_images_count=10, media_videos_count=1,
-  is_exclusive=false, view_type='Sea view', price=90000, currency='eur', facilities='{Elevator}', selling_points='sp', buyer_persona_nationality='DE',
-  buyer_persona_age_range='45-54', buyer_persona_gender='Any', cover_photo_belongs=true where id='${L.id}'`);
+await db.exec(`update ops_listings set title='T', area_sqm=80, building_levels=4, floor=2, bathrooms=1, balconies=1, furnished=false, media_uploaded=false,
+  is_exclusive=false, view_type='Sea view', price=90000, currency='eur', facilities='{Elevator}', selling_points='sp', cover_photo_belongs=true where id='${L.id}'`);
+r = await db.query(`select completeness_pct, missing_fields from ops_listings where id='${L.id}'`);
+ok('photos uploaded = NO keeps the listing incomplete; buyer persona is optional', r.rows[0].completeness_pct < 100 && r.rows[0].missing_fields.join() === 'media_uploaded', JSON.stringify(r.rows[0]));
+await db.exec(`update ops_listings set media_uploaded=true, media_has_logo=true, media_edited=false where id='${L.id}'`);
 r = await db.query(`select completeness_pct, currency from ops_listings where id='${L.id}'`);
 ok('100% after filling (false booleans count as filled), currency uppercased', r.rows[0].completeness_pct === 100 && r.rows[0].currency === 'EUR', JSON.stringify(r.rows[0]));
 await db.exec(`update ops_listings set status='ready_to_publish' where id='${L.id}'`);
@@ -108,7 +110,7 @@ ok('service role can verify; view gives hours_to_publish + on time', r.rows[0].i
 await db.exec(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,status,date_received,date_published_claimed)
   values ('El Gouna','Villa','rent','owner','x','${D1}','published_claimed', now() - interval '100 hours', now() - interval '30 hours')`);
 r = await db.query(`select reference_code, sla_state, claimed_not_found from ops_vw_listing_sla where status='published_claimed'`);
-ok('claimed_not_found + red after 72h, code G-V-xxxx-R (site prefix)', r.rows[0].claimed_not_found === true && r.rows[0].sla_state === 'red' && /^G-V-\d+-R$/.test(r.rows[0].reference_code), JSON.stringify(r.rows[0]));
+ok('claimed_not_found + red after 72h, serial is exactly last + 1 (G-V-2502-R)', r.rows[0].claimed_not_found === true && r.rows[0].sla_state === 'red' && r.rows[0].reference_code === 'G-V-2502-R', JSON.stringify(r.rows[0]));
 
 // tasks: approval is manager-only, send-back needs a reason
 await asUser(D1);

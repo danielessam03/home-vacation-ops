@@ -44,7 +44,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.2.0';
+    const APP_VERSION = 'v1.3.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -122,7 +122,7 @@
     const FIELD_LABEL = {
       title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
       building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
-      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link',
+      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', media_uploaded: 'Photos uploaded', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited',
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
       cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
@@ -139,6 +139,7 @@
         if (typeof v === 'string' && v.trim() === '') return true;
         if (Array.isArray(v) && v.length === 0) return true;
         if (POSITIVE_FIELDS.includes(f) && !(Number(v) > 0)) return true;
+        if (f === 'media_uploaded' && v !== true) return true;          // complete only when the photos ARE uploaded
         return false;
       });
       return { pct: req.length ? Math.floor((100 * (req.length - missing.length)) / req.length) : 100, missing };
@@ -345,7 +346,7 @@
         tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
         deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,
         shoots_completed: shootDone.length,
-        media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_images_count > 0 && l.media_videos_count > 0).length,
+        media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_uploaded === true && l.media_edited === true).length,
       };
     }
 
@@ -428,13 +429,13 @@
     const FORM_GROUPS = [
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
       ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
-      ['Media', ['media_images_count', 'media_videos_count', 'media_drive_link', 'cover_photo_belongs']],
+      ['Media', ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Source', ['source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
-    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs'];
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
 
     const FacilitiesInput = ({ value, onChange, options, bad }) => {
@@ -499,7 +500,6 @@
         setBusy(true);
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
-        ['media_images_count', 'media_videos_count'].forEach((k) => { if (payload[k] == null) payload[k] = 0; });
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || me.id; }
         const row = await save('listings', payload, isEdit ? listing.id : null);
@@ -527,7 +527,7 @@
             <fieldset key={g} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'media_drive_link', 'source_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -781,7 +781,7 @@
 
     // ---------- Bulk CSV import (backlog): map -> dry-run preview -> commit
     const IMPORT_FIELDS = ['reference_code', 'title', 'location', 'property_type', 'deal_type', 'area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished',
-      'media_images_count', 'media_videos_count', 'media_drive_link', 'is_exclusive', 'view_type', 'price', 'currency', 'facilities', 'selling_points', 'buyer_persona_nationality',
+      'media_uploaded', 'media_has_logo', 'media_edited', 'is_exclusive', 'view_type', 'price', 'currency', 'facilities', 'selling_points', 'buyer_persona_nationality',
       'buyer_persona_age_range', 'buyer_persona_gender', 'cover_photo_belongs', 'date_received', 'source_type', 'source_name', 'source_contact'];
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -841,7 +841,7 @@
         await reloadTable('listing_channels');
         setBusy(false); setResult({ created: created.length, failed }); setStep('done');
       };
-      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 12, 1, 'https://drive.google.com/…', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
+      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 'yes', 'yes', 'no', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
 
       return (
         <Modal wide title="Import listings from CSV" onClose={onClose} footer={
@@ -1324,7 +1324,7 @@
         const incomplete = mineL.filter((l) => l.completeness_pct < 100);
         const weekEnd = ymd(addDays(new Date(), 7));
         const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
-        const needMedia = open.filter((l) => !(l.media_images_count > 0));
+        const needMedia = open.filter((l) => l.media_uploaded !== true || l.media_edited !== true);
         return (
           <div>
             <PageHeader title={`Hello, ${(me.full_name || '').split(' ')[0] || 'there'}`} sub={`${monthLabel(month)} · month to date`} />
@@ -1336,7 +1336,7 @@
                 <Section title="My tasks due today / overdue" count={dueToday.length} tone="red">{limitList(dueToday, taskLine, 'Nothing due today.')}</Section>
                 {me.role === 'marketing' && <Section title="My open tasks" count={myTasks.length}>{limitList(myTasks, taskLine, 'No open tasks.')}</Section>}
                 {me.role === 'marketing' && <Section title="Agency deliverables due this week" count={delivs.length} action={<button className="text-xs text-brand-700" onClick={() => go('agencies')}>Open</button>}>{limitList(delivs, (d) => <div key={d.id} className="flex justify-between border-t border-slate-100 py-2 text-sm first:border-t-0"><span>{(data.agencies.find((a) => a.id === d.agency_id) || {}).display_name} · {titleCase(d.item_type)} ({d.delivered_qty}/{d.planned_qty})</span><span className={`text-xs ${d.due_date < ymd(new Date()) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{fmtDate(d.due_date)}</span></div>, 'Nothing due this week.')}</Section>}
-                {me.role === 'marketing' && <Section title="Listings waiting on media" count={needMedia.length}>{limitList(withSla(needMedia), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.property_type} · ${l.location} · no images yet`} />, 'No listing is waiting on media.')}</Section>}
+                {me.role === 'marketing' && <Section title="Listings waiting on media" count={needMedia.length}>{limitList(withSla(needMedia), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.property_type} · ${l.location} · ${l.media_uploaded !== true ? 'photos not uploaded' : 'photos not edited'}`} />, 'No listing is waiting on media.')}</Section>}
               </div>
             </div>
           </div>

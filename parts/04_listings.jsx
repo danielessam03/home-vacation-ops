@@ -16,13 +16,13 @@
     const FORM_GROUPS = [
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
       ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
-      ['Media', ['media_images_count', 'media_videos_count', 'media_drive_link', 'cover_photo_belongs']],
+      ['Media', ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Source', ['source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
-    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs'];
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
 
     const FacilitiesInput = ({ value, onChange, options, bad }) => {
@@ -87,7 +87,6 @@
         setBusy(true);
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
-        ['media_images_count', 'media_videos_count'].forEach((k) => { if (payload[k] == null) payload[k] = 0; });
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || me.id; }
         const row = await save('listings', payload, isEdit ? listing.id : null);
@@ -115,7 +114,7 @@
             <fieldset key={g} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'media_drive_link', 'source_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -369,7 +368,7 @@
 
     // ---------- Bulk CSV import (backlog): map -> dry-run preview -> commit
     const IMPORT_FIELDS = ['reference_code', 'title', 'location', 'property_type', 'deal_type', 'area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished',
-      'media_images_count', 'media_videos_count', 'media_drive_link', 'is_exclusive', 'view_type', 'price', 'currency', 'facilities', 'selling_points', 'buyer_persona_nationality',
+      'media_uploaded', 'media_has_logo', 'media_edited', 'is_exclusive', 'view_type', 'price', 'currency', 'facilities', 'selling_points', 'buyer_persona_nationality',
       'buyer_persona_age_range', 'buyer_persona_gender', 'cover_photo_belongs', 'date_received', 'source_type', 'source_name', 'source_contact'];
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -429,7 +428,7 @@
         await reloadTable('listing_channels');
         setBusy(false); setResult({ created: created.length, failed }); setStep('done');
       };
-      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 12, 1, 'https://drive.google.com/…', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
+      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 'yes', 'yes', 'no', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
 
       return (
         <Modal wide title="Import listings from CSV" onClose={onClose} footer={

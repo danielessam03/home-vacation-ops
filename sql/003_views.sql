@@ -1,5 +1,10 @@
 -- HV OPS — 003_views.sql
 -- Views run with the caller's permissions (security_invoker) so RLS still applies.
+-- Re-run this file after any migration that adds columns to ops_listings: the SLA view selects l.*, and Postgres cannot
+-- "replace" a view whose column order changed, so the views are dropped and rebuilt (views hold no data — nothing is lost).
+
+drop view if exists ops_vw_user_kpis;
+drop view if exists ops_vw_listing_sla;
 
 create or replace view ops_vw_listing_sla with (security_invoker = true) as
 with cfg as (
@@ -87,3 +92,7 @@ select d.agency_id, a.display_name, d.period_month,
        round(100.0 * sum(d.revisions_count) / nullif(sum(d.delivered_qty), 0), 1) as revision_rate_pct
 from ops_agency_deliverables d join ops_agencies a on a.id = d.agency_id
 group by 1, 2, 3;
+
+-- grants live here too, because re-creating a view resets them
+grant select on ops_vw_listing_sla, ops_vw_user_kpis, ops_vw_agency_scorecard to authenticated;
+revoke all on ops_vw_listing_sla, ops_vw_user_kpis, ops_vw_agency_scorecard from anon;

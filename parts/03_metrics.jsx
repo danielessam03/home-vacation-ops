@@ -41,7 +41,7 @@
         tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
         deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,
         shoots_completed: shootDone.length,
-        media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_images_count > 0 && l.media_videos_count > 0).length,
+        media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_uploaded === true && l.media_edited === true).length,
       };
     }
 

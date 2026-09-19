@@ -39,7 +39,7 @@
         const incomplete = mineL.filter((l) => l.completeness_pct < 100);
         const weekEnd = ymd(addDays(new Date(), 7));
         const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
-        const needMedia = open.filter((l) => !(l.media_images_count > 0));
+        const needMedia = open.filter((l) => l.media_uploaded !== true || l.media_edited !== true);
         return (
           <div>
             <PageHeader title={`Hello, ${(me.full_name || '').split(' ')[0] || 'there'}`} sub={`${monthLabel(month)} · month to date`} />
@@ -51,7 +51,7 @@
                 <Section title="My tasks due today / overdue" count={dueToday.length} tone="red">{limitList(dueToday, taskLine, 'Nothing due today.')}</Section>
                 {me.role === 'marketing' && <Section title="My open tasks" count={myTasks.length}>{limitList(myTasks, taskLine, 'No open tasks.')}</Section>}
                 {me.role === 'marketing' && <Section title="Agency deliverables due this week" count={delivs.length} action={<button className="text-xs text-brand-700" onClick={() => go('agencies')}>Open</button>}>{limitList(delivs, (d) => <div key={d.id} className="flex justify-between border-t border-slate-100 py-2 text-sm first:border-t-0"><span>{(data.agencies.find((a) => a.id === d.agency_id) || {}).display_name} · {titleCase(d.item_type)} ({d.delivered_qty}/{d.planned_qty})</span><span className={`text-xs ${d.due_date < ymd(new Date()) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{fmtDate(d.due_date)}</span></div>, 'Nothing due this week.')}</Section>}
-                {me.role === 'marketing' && <Section title="Listings waiting on media" count={needMedia.length}>{limitList(withSla(needMedia), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.property_type} · ${l.location} · no images yet`} />, 'No listing is waiting on media.')}</Section>}
+                {me.role === 'marketing' && <Section title="Listings waiting on media" count={needMedia.length}>{limitList(withSla(needMedia), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.property_type} · ${l.location} · ${l.media_uploaded !== true ? 'photos not uploaded' : 'photos not edited'}`} />, 'No listing is waiting on media.')}</Section>}
               </div>
             </div>
           </div>

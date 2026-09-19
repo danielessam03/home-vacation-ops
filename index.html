@@ -44,7 +44,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.4.0';
+    const APP_VERSION = 'v1.5.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -126,7 +126,7 @@
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
       cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
-      source_name: 'Source name (who gave it)', source_contact: 'Source contact', assigned_to: 'Assigned to',
+      source_name: 'Source name (who gave it)', source_contact: 'Source contact', assigned_to: 'Uploader (puts it online)',
     };
     const POSITIVE_FIELDS = ['media_images_count', 'media_videos_count', 'area_sqm', 'price'];
 
@@ -329,8 +329,15 @@
     }
 
     function userKpis(user, range, data, slaCfg, now) {
+      // stage 1 — ENTRY: what this person entered.  stage 2 — UPLOAD: what this person put online.
+      const uploaderOf = (l) => l.published_claimed_by || l.assigned_to || l.entered_by;
       const ls = data.listings.filter((l) => l.entered_by === user.id && inRange(l.date_received, range));
       const st = listingStats(ls, data.listing_channels, slaCfg, now);
+      const entered = ls.filter((l) => l.status !== 'archived');
+      const hrs = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / 36e5;
+      const up = data.listings.filter((l) => ['published_claimed', 'verified_live'].includes(l.status) && uploaderOf(l) === user.id && inRange(l.date_received, range));
+      const upSt = listingStats(up, data.listing_channels, slaCfg, now);
+      const upLive = up.filter((l) => l.date_published_verified && l.date_ready);
       const ts = data.tasks.filter((t) => t.assigned_to === user.id && t.status !== 'cancelled' && inRange(t.due_at || t.created_at, range));
       const done = ts.filter((t) => t.status === 'done');
       const onTime = done.filter((t) => !t.due_at || (t.completed_at && new Date(t.completed_at) <= new Date(t.due_at)));
@@ -339,9 +346,13 @@
       const mediaListingIds = new Set(done.filter((t) => t.listing_id).map((t) => t.listing_id));
       return {
         user_id: user.id, name: user.full_name || user.email, role: user.role,
-        listings_entered: st.entered, avg_completeness: st.avg_completeness, avg_hours_to_publish: st.avg_hours,
-        on_time_pct: st.on_time_pct, rejected_count: st.rejected, portal_coverage_pct: st.portal_coverage_pct,
-        claimed_not_found: st.claimed_not_found, verified: st.verified, breached: st.breached,
+        listings_entered: st.entered, avg_completeness: st.avg_completeness, rejected_count: st.rejected,
+        avg_hours_to_ready: r1(avg(entered.filter((l) => l.date_ready).map((l) => Math.max(0, hrs(l.date_received, l.date_ready))))),
+        incomplete_open: entered.filter((l) => l.completeness_pct < 100 && ['draft', 'on_hold'].includes(l.status)).length,
+        listings_uploaded: upSt.entered, verified: upSt.verified, avg_hours_to_publish: upSt.avg_hours, on_time_pct: upSt.on_time_pct,
+        avg_hours_ready_to_live: r1(avg(upLive.map((l) => Math.max(0, hrs(l.date_ready, l.date_published_verified))))),
+        waiting_upload: data.listings.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === user.id).length,
+        portal_coverage_pct: upSt.portal_coverage_pct, claimed_not_found: upSt.claimed_not_found, breached: upSt.breached,
         tasks_completed: done.length, tasks_due: ts.length, tasks_late: lateOpen.length + (done.length - onTime.length),
         tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
         deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,
@@ -486,7 +497,7 @@
         if (k === 'buyer_persona_age_range') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.age_ranges || []} />;
         if (k === 'buyer_persona_gender') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={['Any', 'Male', 'Female', 'Couples', 'Families']} />;
         if (k === 'source_type') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={SOURCE_TYPES.map((s) => [s, titleCase(s)])} />;
-        if (k === 'assigned_to') return <Select value={f[k]} onChange={(v) => set(k, v)} options={staff.map((p) => [p.id, p.full_name || p.email])} placeholder="Me (default)" />;
+        if (k === 'assigned_to') return <Select value={f[k]} onChange={(v) => set(k, v)} options={staff.map((p) => [p.id, p.full_name || p.email])} placeholder="Default uploader" />;
         if (k === 'date_received') return <input type="datetime-local" className={inputCls(bad(k))} value={toLocalInput(f[k])} disabled={isEdit && me.role !== 'admin'} onChange={(e) => set(k, fromLocalInput(e.target.value))} />;
         if (k === 'facilities') return <FacilitiesInput bad={bad(k)} value={f.facilities} onChange={(v) => set(k, v)} options={cfg.facilities} />;
         if (k === 'selling_points') return <textarea rows={3} className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
@@ -503,7 +514,7 @@
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
-        else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || me.id; }
+        else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
         const row = await save('listings', payload, isEdit ? listing.id : null);
         setBusy(false);
         if (!row) return;
@@ -1219,6 +1230,12 @@
     // =========================================================================================
     // KPIs — per-person cards, leaderboard, monthly targets
     // =========================================================================================
+    // a data-entry person only sees the stage(s) they actually work in: entry (Sally) and/or upload (Lucy)
+    const kpiDefsForUser = (cfg, role, k) => {
+      const active = { entry: k.listings_entered > 0, upload: k.listings_uploaded > 0 || k.waiting_upload > 0 };
+      const any = active.entry || active.upload;
+      return kpiDefsFor(cfg, role).filter((d) => !d.part || !any || active[d.part]);
+    };
     const kpiDefsFor = (cfg, role) => (cfg.user_kpi_defs || []).filter((d) => role === 'manager' || role === 'admin' ? true : d.team === role);
     const targetOf = (data, userId, month, key) => { const t = data.kpi_targets.find((x) => x.subject_type === 'user' && x.subject_id === userId && x.period_month === month && x.metric_key === key); return t ? Number(t.target_value) : null; };
     const unitOf = (d) => d.unit === '%' ? '%' : d.unit === 'h' ? 'h' : '';
@@ -1249,12 +1266,12 @@
       const range = monthRange(month);
       const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role) && (mgr || p.id === me.id));
       const rows = useMemo(() => people.map((p) => ({ p, k: userKpis(p, range, data, cfg.sla_hours, now) })), [month, data, now]);
-      const board = (role, sortKey, cols) => {
-        const rs = rows.filter((r) => r.p.role === role).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
+      const board = (title, keep, sortKey, cols) => {
+        const rs = rows.filter(keep).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
         if (!rs.length) return null;
         return (
           <Card className="scroll-x p-4">
-            <h3 className="mb-3 text-sm font-semibold text-brand-800">{ROLE_LABEL[role]} leaderboard</h3>
+            <h3 className="mb-3 text-sm font-semibold text-brand-800">{title}</h3>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500"><tr><th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Name</th>{cols.map((c) => <th key={c.key} className="px-2 py-1.5 text-right font-medium">{c.label}</th>)}</tr></thead>
               <tbody>{rs.map((r, i) => (
@@ -1271,8 +1288,10 @@
         <div>
           <PageHeader title="KPIs" sub="Value / target. Green = target met."><MonthPicker value={month} onChange={setMonth} /></PageHeader>
           <div className="space-y-4">
-            {mgr && board('data_entry', 'listings_entered', defs.filter((d) => d.team === 'data_entry'))}
-            {mgr && board('marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
+            {mgr && <p className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
+            {mgr && board('Stage 1 — data & photos entered', (r) => r.k.listings_entered > 0, 'listings_entered', defs.filter((d) => d.part === 'entry'))}
+            {mgr && board('Stage 2 — uploaded online', (r) => r.k.listings_uploaded > 0 || r.k.waiting_upload > 0, 'listings_uploaded', defs.filter((d) => d.part === 'upload'))}
+            {mgr && board('Marketing', (r) => r.p.role === 'marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
             {rows.map(({ p, k }) => (
               <Card key={p.id} className="p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
@@ -1280,7 +1299,7 @@
                   {mgr && <Btn kind="ghost" className="no-print !py-1.5" onClick={() => setTarget(p)}>Set targets</Btn>}
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {kpiDefsFor(cfg, p.role).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={k[d.key]} target={targetOf(data, p.id, month, d.key)} better={d.better} />)}
+                  {kpiDefsForUser(cfg, p.role, k).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={k[d.key]} target={targetOf(data, p.id, month, d.key)} better={d.better} />)}
                 </div>
               </Card>
             ))}
@@ -1323,12 +1342,13 @@
       const taskLine = (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className={`whitespace-nowrap text-xs ${isOverdue(t, now) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{t.due_at ? fmtDateTime(t.due_at) : ''}</span></button>;
       const kpiTiles = (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {kpiDefsFor(cfg, me.role).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
+          {(isMgr(me) ? [] : kpiDefsForUser(cfg, me.role, myKpi)).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
         </div>
       );
 
       if (!mgr) {
-        const incomplete = mineL.filter((l) => l.completeness_pct < 100);
+        const incomplete = mineL.filter((l) => l.completeness_pct < 100 && l.entered_by === me.id);
+        const toUpload = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id);
         const weekEnd = ymd(addDays(new Date(), 7));
         const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
         const needMedia = open.filter((l) => l.media_uploaded !== true || l.media_edited !== true);
@@ -1338,6 +1358,7 @@
             <div className="space-y-4">
               {kpiTiles}
               <div className="grid gap-4 lg:grid-cols-2">
+                {me.role === 'data_entry' && toUpload.length > 0 && <Section title="Ready — waiting for me to upload" count={toUpload.length} tone="red">{limitList(withSla(toUpload), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />, '')}</Section>}
                 {me.role === 'data_entry' && <Section title="My SLA clocks" count={mineL.length}>{limitList(withSla(mineL), ({ l }) => <ListingLine key={l.id} l={l} />, 'Nothing in progress.')}</Section>}
                 {me.role === 'data_entry' && <Section title="My incomplete listings" count={incomplete.length} tone="red">{limitList(incomplete, (l) => <ListingLine key={l.id} l={l} note={`Missing: ${(l.missing_fields || []).map((m) => FIELD_LABEL[m] || m).join(', ')}`} />, 'All complete.')}</Section>}
                 <Section title="My tasks due today / overdue" count={dueToday.length} tone="red">{limitList(dueToday, taskLine, 'Nothing due today.')}</Section>
@@ -1384,8 +1405,8 @@
             <Card className="scroll-x p-4">
               <h3 className="mb-3 text-sm font-semibold text-brand-800">Team KPIs — {monthLabel(month)}</h3>
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-slate-500"><tr>{['Name', 'Role', 'Listings', 'Avg complete', 'Avg hours', 'Within SLA', 'Not found', 'Tasks done', 'Tasks late'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
-                <tbody>{team.map((k) => <tr key={k.user_id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-2 font-medium">{k.name}</td><td className="px-2 py-2 text-slate-500">{ROLE_LABEL[k.role]}</td><td className="num px-2 py-2">{k.listings_entered}</td><td className="num px-2 py-2">{show(k.avg_completeness, '%')}</td><td className="num px-2 py-2">{show(k.avg_hours_to_publish, 'h')}</td><td className="num px-2 py-2">{show(k.on_time_pct, '%')}</td><td className={`num px-2 py-2 ${k.claimed_not_found ? 'font-semibold text-rose-700' : ''}`}>{k.claimed_not_found}</td><td className="num px-2 py-2">{k.tasks_completed}</td><td className={`num px-2 py-2 ${k.tasks_late ? 'text-rose-700' : ''}`}>{k.tasks_late}</td></tr>)}</tbody>
+                <thead className="text-left text-xs text-slate-500"><tr>{['Name', 'Role', 'Entered', 'Avg complete', 'Uploaded', 'Avg hours to live', 'Within SLA', 'Not found', 'Tasks done', 'Tasks late'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                <tbody>{team.map((k) => <tr key={k.user_id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-2 font-medium">{k.name}</td><td className="px-2 py-2 text-slate-500">{ROLE_LABEL[k.role]}</td><td className="num px-2 py-2">{k.listings_entered}</td><td className="num px-2 py-2">{show(k.avg_completeness, '%')}</td><td className="num px-2 py-2">{k.listings_uploaded}</td><td className="num px-2 py-2">{show(k.avg_hours_to_publish, 'h')}</td><td className="num px-2 py-2">{show(k.on_time_pct, '%')}</td><td className={`num px-2 py-2 ${k.claimed_not_found ? 'font-semibold text-rose-700' : ''}`}>{k.claimed_not_found}</td><td className="num px-2 py-2">{k.tasks_completed}</td><td className={`num px-2 py-2 ${k.tasks_late ? 'text-rose-700' : ''}`}>{k.tasks_late}</td></tr>)}</tbody>
               </table>
             </Card>
             {me.role === 'admin' && (
@@ -1418,7 +1439,7 @@
       channel: ['By channel', [['total', 'Listings'], ['published', 'Published'], ['in_progress', 'In progress'], ['rejected', 'Rejected'], ['coverage_pct', 'Coverage %']]],
       agency: ['By agency', [['planned', 'Planned'], ['delivered', 'Delivered'], ['delivery_rate', 'Delivery %'], ['on_time_pct', 'On time %'], ['revision_rate', 'Revision %'], ['leads', 'Leads'], ['cpl', 'Cost / lead']]],
     };
-    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Listings'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_publish', 'Avg hours'], ['on_time_pct', 'Within SLA %'], ['rejected_count', 'Rejected'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
+    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Entered'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_ready', 'Hours to ready'], ['rejected_count', 'Rejected'], ['listings_uploaded', 'Uploaded'], ['avg_hours_ready_to_live', 'Hours ready→live'], ['on_time_pct', 'Within SLA %'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
 
     const DataTable = ({ cols, rows, first = 'label', firstLabel = '' }) => !rows.length ? <p className="text-sm text-slate-400">No data in this period.</p> : (
       <div className="scroll-x"><table className="w-full text-sm">
@@ -1657,7 +1678,7 @@
       return (
         <div>
           <PageHeader title="Settings" sub="Admin only" />
-          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA hours'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier']]} />
+          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier']]} />
           {tab === 'users' && <UsersTab />}
           {tab === 'loc' && <KVEditor settingKey="location_codes" nameLabel="Location (as on the website)" codeLabel="Code" hint="First part of the reference code (HD-A-1012-S). Changing a code only affects NEW listings — existing codes never change." />}
           {tab === 'types' && <KVEditor settingKey="unit_type_codes" nameLabel="Unit type" codeLabel="Code" hint="Second part of the reference code." />}
@@ -1674,6 +1695,7 @@
                 {[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={sla[k] == null ? '' : sla[k]} onChange={(e) => setSla({ ...sla, [k]: e.target.value })} /></Field>)}
               </div>
               <div className="mt-3"><Btn onClick={() => saveSetting('sla_hours', Object.fromEntries(Object.entries(sla).map(([k, v]) => [k, Number(v)])))}>Save</Btn></div>
+              <div className="mt-5 max-w-sm border-t border-slate-200 pt-4"><Field label="Default uploader — every new listing is handed to this person to put online"><Select value={cfg.default_uploader || null} placeholder="Nobody (stays with the person who entered it)" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} onChange={(v) => saveSetting('default_uploader', v)} /></Field></div>
             </Card>
           )}
           {tab === 'portals' && (

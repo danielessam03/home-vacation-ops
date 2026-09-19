@@ -31,12 +31,13 @@
       const taskLine = (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className={`whitespace-nowrap text-xs ${isOverdue(t, now) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{t.due_at ? fmtDateTime(t.due_at) : ''}</span></button>;
       const kpiTiles = (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {kpiDefsFor(cfg, me.role).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
+          {(isMgr(me) ? [] : kpiDefsForUser(cfg, me.role, myKpi)).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
         </div>
       );
 
       if (!mgr) {
-        const incomplete = mineL.filter((l) => l.completeness_pct < 100);
+        const incomplete = mineL.filter((l) => l.completeness_pct < 100 && l.entered_by === me.id);
+        const toUpload = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id);
         const weekEnd = ymd(addDays(new Date(), 7));
         const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
         const needMedia = open.filter((l) => l.media_uploaded !== true || l.media_edited !== true);
@@ -46,6 +47,7 @@
             <div className="space-y-4">
               {kpiTiles}
               <div className="grid gap-4 lg:grid-cols-2">
+                {me.role === 'data_entry' && toUpload.length > 0 && <Section title="Ready — waiting for me to upload" count={toUpload.length} tone="red">{limitList(withSla(toUpload), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />, '')}</Section>}
                 {me.role === 'data_entry' && <Section title="My SLA clocks" count={mineL.length}>{limitList(withSla(mineL), ({ l }) => <ListingLine key={l.id} l={l} />, 'Nothing in progress.')}</Section>}
                 {me.role === 'data_entry' && <Section title="My incomplete listings" count={incomplete.length} tone="red">{limitList(incomplete, (l) => <ListingLine key={l.id} l={l} note={`Missing: ${(l.missing_fields || []).map((m) => FIELD_LABEL[m] || m).join(', ')}`} />, 'All complete.')}</Section>}
                 <Section title="My tasks due today / overdue" count={dueToday.length} tone="red">{limitList(dueToday, taskLine, 'Nothing due today.')}</Section>
@@ -92,8 +94,8 @@
             <Card className="scroll-x p-4">
               <h3 className="mb-3 text-sm font-semibold text-brand-800">Team KPIs — {monthLabel(month)}</h3>
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-slate-500"><tr>{['Name', 'Role', 'Listings', 'Avg complete', 'Avg hours', 'Within SLA', 'Not found', 'Tasks done', 'Tasks late'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
-                <tbody>{team.map((k) => <tr key={k.user_id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-2 font-medium">{k.name}</td><td className="px-2 py-2 text-slate-500">{ROLE_LABEL[k.role]}</td><td className="num px-2 py-2">{k.listings_entered}</td><td className="num px-2 py-2">{show(k.avg_completeness, '%')}</td><td className="num px-2 py-2">{show(k.avg_hours_to_publish, 'h')}</td><td className="num px-2 py-2">{show(k.on_time_pct, '%')}</td><td className={`num px-2 py-2 ${k.claimed_not_found ? 'font-semibold text-rose-700' : ''}`}>{k.claimed_not_found}</td><td className="num px-2 py-2">{k.tasks_completed}</td><td className={`num px-2 py-2 ${k.tasks_late ? 'text-rose-700' : ''}`}>{k.tasks_late}</td></tr>)}</tbody>
+                <thead className="text-left text-xs text-slate-500"><tr>{['Name', 'Role', 'Entered', 'Avg complete', 'Uploaded', 'Avg hours to live', 'Within SLA', 'Not found', 'Tasks done', 'Tasks late'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                <tbody>{team.map((k) => <tr key={k.user_id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-2 font-medium">{k.name}</td><td className="px-2 py-2 text-slate-500">{ROLE_LABEL[k.role]}</td><td className="num px-2 py-2">{k.listings_entered}</td><td className="num px-2 py-2">{show(k.avg_completeness, '%')}</td><td className="num px-2 py-2">{k.listings_uploaded}</td><td className="num px-2 py-2">{show(k.avg_hours_to_publish, 'h')}</td><td className="num px-2 py-2">{show(k.on_time_pct, '%')}</td><td className={`num px-2 py-2 ${k.claimed_not_found ? 'font-semibold text-rose-700' : ''}`}>{k.claimed_not_found}</td><td className="num px-2 py-2">{k.tasks_completed}</td><td className={`num px-2 py-2 ${k.tasks_late ? 'text-rose-700' : ''}`}>{k.tasks_late}</td></tr>)}</tbody>
               </table>
             </Card>
             {me.role === 'admin' && (
@@ -126,7 +128,7 @@
       channel: ['By channel', [['total', 'Listings'], ['published', 'Published'], ['in_progress', 'In progress'], ['rejected', 'Rejected'], ['coverage_pct', 'Coverage %']]],
       agency: ['By agency', [['planned', 'Planned'], ['delivered', 'Delivered'], ['delivery_rate', 'Delivery %'], ['on_time_pct', 'On time %'], ['revision_rate', 'Revision %'], ['leads', 'Leads'], ['cpl', 'Cost / lead']]],
     };
-    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Listings'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_publish', 'Avg hours'], ['on_time_pct', 'Within SLA %'], ['rejected_count', 'Rejected'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
+    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Entered'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_ready', 'Hours to ready'], ['rejected_count', 'Rejected'], ['listings_uploaded', 'Uploaded'], ['avg_hours_ready_to_live', 'Hours ready→live'], ['on_time_pct', 'Within SLA %'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
 
     const DataTable = ({ cols, rows, first = 'label', firstLabel = '' }) => !rows.length ? <p className="text-sm text-slate-400">No data in this period.</p> : (
       <div className="scroll-x"><table className="w-full text-sm">

@@ -313,7 +313,7 @@ async function raiseAlerts(env) {
     + 'completeness_pct,missing_fields,hours_elapsed,sla_state,claimed_not_found'
     + '&date_published_verified=is.null&status=not.in.(rejected,archived,on_hold)');
   for (const l of rows) {
-    const who = l.assigned_to || l.entered_by;
+    const who = l.status === 'draft' ? l.entered_by : (l.assigned_to || l.entered_by);
     const h = Math.round(l.hours_elapsed);
     const base = { entity_type: 'listing', entity_id: l.id };
     if (l.sla_state === 'yellow') {

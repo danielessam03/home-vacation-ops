@@ -73,7 +73,7 @@
         if (k === 'buyer_persona_age_range') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.age_ranges || []} />;
         if (k === 'buyer_persona_gender') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={['Any', 'Male', 'Female', 'Couples', 'Families']} />;
         if (k === 'source_type') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={SOURCE_TYPES.map((s) => [s, titleCase(s)])} />;
-        if (k === 'assigned_to') return <Select value={f[k]} onChange={(v) => set(k, v)} options={staff.map((p) => [p.id, p.full_name || p.email])} placeholder="Me (default)" />;
+        if (k === 'assigned_to') return <Select value={f[k]} onChange={(v) => set(k, v)} options={staff.map((p) => [p.id, p.full_name || p.email])} placeholder="Default uploader" />;
         if (k === 'date_received') return <input type="datetime-local" className={inputCls(bad(k))} value={toLocalInput(f[k])} disabled={isEdit && me.role !== 'admin'} onChange={(e) => set(k, fromLocalInput(e.target.value))} />;
         if (k === 'facilities') return <FacilitiesInput bad={bad(k)} value={f.facilities} onChange={(v) => set(k, v)} options={cfg.facilities} />;
         if (k === 'selling_points') return <textarea rows={3} className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
@@ -90,7 +90,7 @@
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
-        else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || me.id; }
+        else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
         const row = await save('listings', payload, isEdit ? listing.id : null);
         setBusy(false);
         if (!row) return;

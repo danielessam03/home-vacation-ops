@@ -24,8 +24,15 @@
     }
 
     function userKpis(user, range, data, slaCfg, now) {
+      // stage 1 — ENTRY: what this person entered.  stage 2 — UPLOAD: what this person put online.
+      const uploaderOf = (l) => l.published_claimed_by || l.assigned_to || l.entered_by;
       const ls = data.listings.filter((l) => l.entered_by === user.id && inRange(l.date_received, range));
       const st = listingStats(ls, data.listing_channels, slaCfg, now);
+      const entered = ls.filter((l) => l.status !== 'archived');
+      const hrs = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / 36e5;
+      const up = data.listings.filter((l) => ['published_claimed', 'verified_live'].includes(l.status) && uploaderOf(l) === user.id && inRange(l.date_received, range));
+      const upSt = listingStats(up, data.listing_channels, slaCfg, now);
+      const upLive = up.filter((l) => l.date_published_verified && l.date_ready);
       const ts = data.tasks.filter((t) => t.assigned_to === user.id && t.status !== 'cancelled' && inRange(t.due_at || t.created_at, range));
       const done = ts.filter((t) => t.status === 'done');
       const onTime = done.filter((t) => !t.due_at || (t.completed_at && new Date(t.completed_at) <= new Date(t.due_at)));
@@ -34,9 +41,13 @@
       const mediaListingIds = new Set(done.filter((t) => t.listing_id).map((t) => t.listing_id));
       return {
         user_id: user.id, name: user.full_name || user.email, role: user.role,
-        listings_entered: st.entered, avg_completeness: st.avg_completeness, avg_hours_to_publish: st.avg_hours,
-        on_time_pct: st.on_time_pct, rejected_count: st.rejected, portal_coverage_pct: st.portal_coverage_pct,
-        claimed_not_found: st.claimed_not_found, verified: st.verified, breached: st.breached,
+        listings_entered: st.entered, avg_completeness: st.avg_completeness, rejected_count: st.rejected,
+        avg_hours_to_ready: r1(avg(entered.filter((l) => l.date_ready).map((l) => Math.max(0, hrs(l.date_received, l.date_ready))))),
+        incomplete_open: entered.filter((l) => l.completeness_pct < 100 && ['draft', 'on_hold'].includes(l.status)).length,
+        listings_uploaded: upSt.entered, verified: upSt.verified, avg_hours_to_publish: upSt.avg_hours, on_time_pct: upSt.on_time_pct,
+        avg_hours_ready_to_live: r1(avg(upLive.map((l) => Math.max(0, hrs(l.date_ready, l.date_published_verified))))),
+        waiting_upload: data.listings.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === user.id).length,
+        portal_coverage_pct: upSt.portal_coverage_pct, claimed_not_found: upSt.claimed_not_found, breached: upSt.breached,
         tasks_completed: done.length, tasks_due: ts.length, tasks_late: lateOpen.length + (done.length - onTime.length),
         tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
         deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,

@@ -33,10 +33,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -159,10 +159,26 @@ r = await db.query(`select (select count(*) from ops_profiles)::int p, (select c
 ok('ops staff see colleagues via ops_profiles but still only their own app_users row; CEO defaults to admin', r.rows[0].p === 5 && r.rows[0].a === 1 && r.rows[0].ceo_role === 'admin', JSON.stringify(r.rows[0]));
 
 // KPI bridge into HR
+await asUser(A);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,assigned_to,title,area_sqm,building_levels,floor,bedrooms,bathrooms,balconies,furnished,
+  is_exclusive,view_type,price,currency,facilities,selling_points,cover_photo_belongs,media_uploaded) values ('Hadaba','Villa','sale','owner','x','${A}','${D2}','CEO listing',80,1,1,1,1,1,true,false,'Sea view',1,'EUR','{Pool}','sp',true,true) returning id, completeness_pct`);
+const CL = r.rows[0].id;
+await db.exec(`update ops_listings set status='ready_to_publish' where id='${CL}'`);
+await asService(); await db.exec(`update app_users set access_ops=true where id='${D2}'`); await asUser(D2);
+await db.exec(`update ops_listings set status='published_claimed' where id='${CL}'`);
+await asService(); await db.exec(`update ops_listings set status='verified_live', date_published_verified=now() where id='${CL}'`);
+r = await db.query(`select m.code, (select user_id from employees e where e.id=k.employee_id) u from kpi_entries k join kpi_metrics m on m.id=k.metric_id where k.external_id like '%' || '${CL}' order by 1`);
+ok('CEO who entered is NOT scored; the uploader gets live + on-time', r.rows.map((x) => x.code).join() === 'ops_listing_live,ops_listing_on_time' && r.rows.every((x) => x.u === D2), JSON.stringify(r.rows));
+await asUser(A);
+r = await db.query(`select listings_entered, listings_uploaded from ops_vw_user_kpis where user_id='${D2}'`); ok('view: uploader counted under listings_uploaded', Number(r.rows[0].listings_uploaded) === 1);
+await asService();
+await db.exec(`update app_users set access_ops=false where id='${D2}'`);
+r = await db.query(`select external_id from kpi_entries where external_id like '%' || '${CL}'`); const ceoIds = r.rows.map((x) => "'" + x.external_id + "'").join(',');
+await db.exec(`delete from kpi_entries where external_id in (${ceoIds})`);
 await asService();
 r = await db.query(`select m.code, e.status, e.source, e.external_id from kpi_entries e join kpi_metrics m on m.id=e.metric_id order by m.code`);
 const codes = r.rows.map((x) => x.code + ':' + x.status).join(',');
-ok('HR kpi_entries: listing live + on time + task on time, all source=ops', codes === 'ops_listing_live:approved,ops_listing_on_time:approved,ops_task_on_time:approved' && r.rows.every((x) => x.source === 'ops'), codes);
+ok('HR kpi_entries: entered-ready + live + on time + task on time, all source=ops', codes === 'ops_listing_live:approved,ops_listing_on_time:approved,ops_listing_ready:approved,ops_task_on_time:approved' && r.rows.every((x) => x.source === 'ops'), codes);
 await db.exec(`update ops_tasks set status='doing', rejection_reason='redo' where title='Do it'`);
 r = await db.query(`select status from kpi_entries where external_id like 'ops:task:%'`); ok('reopened task => HR entry rejected', r.rows[0].status === 'rejected');
 await db.exec(`update ops_tasks set status='done' where title='Do it'`);

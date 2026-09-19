@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.4.0';
+    const APP_VERSION = 'v1.5.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -85,7 +85,7 @@
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
       cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
-      source_name: 'Source name (who gave it)', source_contact: 'Source contact', assigned_to: 'Assigned to',
+      source_name: 'Source name (who gave it)', source_contact: 'Source contact', assigned_to: 'Uploader (puts it online)',
     };
     const POSITIVE_FIELDS = ['media_images_count', 'media_videos_count', 'area_sqm', 'price'];
 

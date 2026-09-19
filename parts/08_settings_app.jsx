@@ -165,7 +165,7 @@
       return (
         <div>
           <PageHeader title="Settings" sub="Admin only" />
-          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA hours'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier']]} />
+          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier']]} />
           {tab === 'users' && <UsersTab />}
           {tab === 'loc' && <KVEditor settingKey="location_codes" nameLabel="Location (as on the website)" codeLabel="Code" hint="First part of the reference code (HD-A-1012-S). Changing a code only affects NEW listings — existing codes never change." />}
           {tab === 'types' && <KVEditor settingKey="unit_type_codes" nameLabel="Unit type" codeLabel="Code" hint="Second part of the reference code." />}
@@ -182,6 +182,7 @@
                 {[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={sla[k] == null ? '' : sla[k]} onChange={(e) => setSla({ ...sla, [k]: e.target.value })} /></Field>)}
               </div>
               <div className="mt-3"><Btn onClick={() => saveSetting('sla_hours', Object.fromEntries(Object.entries(sla).map(([k, v]) => [k, Number(v)])))}>Save</Btn></div>
+              <div className="mt-5 max-w-sm border-t border-slate-200 pt-4"><Field label="Default uploader — every new listing is handed to this person to put online"><Select value={cfg.default_uploader || null} placeholder="Nobody (stays with the person who entered it)" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} onChange={(v) => saveSetting('default_uploader', v)} /></Field></div>
             </Card>
           )}
           {tab === 'portals' && (

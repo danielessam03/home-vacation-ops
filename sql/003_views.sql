@@ -34,21 +34,31 @@ select b.*,
 from base b cross join cfg;
 
 create or replace view ops_vw_user_kpis with (security_invoker = true) as
+-- Two stages, two people: ENTRY KPIs belong to entered_by, UPLOAD KPIs to whoever put the listing online.
 with l as (
   select entered_by as user_id, date_trunc('month', date_received)::date as period_month,
          count(*)                                                   as listings_entered,
          round(avg(completeness_pct), 1)                            as avg_completeness,
-         round(avg(hours_to_publish), 1)                            as avg_hours_to_publish,
-         round(100.0 * count(*) filter (where is_on_time)
-               / nullif(count(*) filter (where date_published_verified is not null), 0), 1) as on_time_pct,
-         count(*) filter (where status = 'rejected')                as rejected_count,
-         count(*) filter (where claimed_not_found)                  as claimed_not_found_count
-  from ops_vw_listing_sla
+         round(avg(extract(epoch from (date_ready - date_received)) / 3600.0)::numeric, 1) as avg_hours_to_ready,
+         count(*) filter (where status = 'rejected')                as rejected_count
+  from ops_listings
   where status <> 'archived'
   group by 1, 2
 ),
+u as (
+  select coalesce(published_claimed_by, assigned_to, entered_by) as user_id, date_trunc('month', date_received)::date as period_month,
+         count(*)                                                   as listings_uploaded,
+         round(avg(hours_to_publish), 1)                            as avg_hours_to_publish,
+         round(avg(extract(epoch from (date_published_verified - date_ready)) / 3600.0)::numeric, 1) as avg_hours_ready_to_live,
+         round(100.0 * count(*) filter (where is_on_time)
+               / nullif(count(*) filter (where date_published_verified is not null), 0), 1) as on_time_pct,
+         count(*) filter (where claimed_not_found)                  as claimed_not_found_count
+  from ops_vw_listing_sla
+  where status in ('published_claimed','verified_live')
+  group by 1, 2
+),
 c as (
-  select li.entered_by as user_id, date_trunc('month', li.date_received)::date as period_month,
+  select coalesce(li.published_claimed_by, li.assigned_to, li.entered_by) as user_id, date_trunc('month', li.date_received)::date as period_month,
          round(100.0 * count(*) filter (where ch.status = 'published') / nullif(count(*), 0), 1) as portal_coverage_pct
   from ops_listing_channels ch join ops_listings li on li.id = ch.listing_id
   where li.status not in ('archived','rejected')
@@ -65,12 +75,14 @@ t as (
   where assigned_to is not null
   group by 1, 2
 ),
-k as (select user_id, period_month from l union select user_id, period_month from t)
+k as (select user_id, period_month from l union select user_id, period_month from u union select user_id, period_month from t)
 select k.user_id, p.full_name, p.role, k.period_month,
        coalesce(l.listings_entered, 0)        as listings_entered,
-       l.avg_completeness, l.avg_hours_to_publish, l.on_time_pct,
+       l.avg_completeness, l.avg_hours_to_ready,
        coalesce(l.rejected_count, 0)          as rejected_count,
-       coalesce(l.claimed_not_found_count, 0) as claimed_not_found_count,
+       coalesce(u.listings_uploaded, 0)       as listings_uploaded,
+       u.avg_hours_to_publish, u.avg_hours_ready_to_live, u.on_time_pct,
+       coalesce(u.claimed_not_found_count, 0) as claimed_not_found_count,
        c.portal_coverage_pct,
        coalesce(t.tasks_completed, 0)         as tasks_completed,
        coalesce(t.tasks_on_time, 0)           as tasks_on_time,
@@ -78,6 +90,7 @@ select k.user_id, p.full_name, p.role, k.period_month,
 from k
 join ops_profiles p on p.id = k.user_id
 left join l on l.user_id = k.user_id and l.period_month = k.period_month
+left join u on u.user_id = k.user_id and u.period_month = k.period_month
 left join c on c.user_id = k.user_id and c.period_month = k.period_month
 left join t on t.user_id = k.user_id and t.period_month = k.period_month;
 

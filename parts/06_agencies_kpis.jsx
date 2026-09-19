@@ -145,6 +145,12 @@
     // =========================================================================================
     // KPIs — per-person cards, leaderboard, monthly targets
     // =========================================================================================
+    // a data-entry person only sees the stage(s) they actually work in: entry (Sally) and/or upload (Lucy)
+    const kpiDefsForUser = (cfg, role, k) => {
+      const active = { entry: k.listings_entered > 0, upload: k.listings_uploaded > 0 || k.waiting_upload > 0 };
+      const any = active.entry || active.upload;
+      return kpiDefsFor(cfg, role).filter((d) => !d.part || !any || active[d.part]);
+    };
     const kpiDefsFor = (cfg, role) => (cfg.user_kpi_defs || []).filter((d) => role === 'manager' || role === 'admin' ? true : d.team === role);
     const targetOf = (data, userId, month, key) => { const t = data.kpi_targets.find((x) => x.subject_type === 'user' && x.subject_id === userId && x.period_month === month && x.metric_key === key); return t ? Number(t.target_value) : null; };
     const unitOf = (d) => d.unit === '%' ? '%' : d.unit === 'h' ? 'h' : '';
@@ -175,12 +181,12 @@
       const range = monthRange(month);
       const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role) && (mgr || p.id === me.id));
       const rows = useMemo(() => people.map((p) => ({ p, k: userKpis(p, range, data, cfg.sla_hours, now) })), [month, data, now]);
-      const board = (role, sortKey, cols) => {
-        const rs = rows.filter((r) => r.p.role === role).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
+      const board = (title, keep, sortKey, cols) => {
+        const rs = rows.filter(keep).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
         if (!rs.length) return null;
         return (
           <Card className="scroll-x p-4">
-            <h3 className="mb-3 text-sm font-semibold text-brand-800">{ROLE_LABEL[role]} leaderboard</h3>
+            <h3 className="mb-3 text-sm font-semibold text-brand-800">{title}</h3>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500"><tr><th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Name</th>{cols.map((c) => <th key={c.key} className="px-2 py-1.5 text-right font-medium">{c.label}</th>)}</tr></thead>
               <tbody>{rs.map((r, i) => (
@@ -197,8 +203,10 @@
         <div>
           <PageHeader title="KPIs" sub="Value / target. Green = target met."><MonthPicker value={month} onChange={setMonth} /></PageHeader>
           <div className="space-y-4">
-            {mgr && board('data_entry', 'listings_entered', defs.filter((d) => d.team === 'data_entry'))}
-            {mgr && board('marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
+            {mgr && <p className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
+            {mgr && board('Stage 1 — data & photos entered', (r) => r.k.listings_entered > 0, 'listings_entered', defs.filter((d) => d.part === 'entry'))}
+            {mgr && board('Stage 2 — uploaded online', (r) => r.k.listings_uploaded > 0 || r.k.waiting_upload > 0, 'listings_uploaded', defs.filter((d) => d.part === 'upload'))}
+            {mgr && board('Marketing', (r) => r.p.role === 'marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
             {rows.map(({ p, k }) => (
               <Card key={p.id} className="p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
@@ -206,7 +214,7 @@
                   {mgr && <Btn kind="ghost" className="no-print !py-1.5" onClick={() => setTarget(p)}>Set targets</Btn>}
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {kpiDefsFor(cfg, p.role).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={k[d.key]} target={targetOf(data, p.id, month, d.key)} better={d.better} />)}
+                  {kpiDefsForUser(cfg, p.role, k).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={k[d.key]} target={targetOf(data, p.id, month, d.key)} better={d.better} />)}
                 </div>
               </Card>
             ))}

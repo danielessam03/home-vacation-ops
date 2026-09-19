@@ -33,10 +33,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -75,11 +75,14 @@ await expectErr('cannot insert as someone else (RLS)', `insert into ops_listings
 await expectErr('DELETE revoked', `delete from ops_listings where id='${L.id}'`, /permission denied/);
 
 // fill everything -> 100% -> ready -> claimed
-await db.exec(`update ops_listings set title='T', area_sqm=80, building_levels=4, floor=2, bathrooms=1, balconies=1, furnished=false, media_uploaded=false,
+await db.exec(`update ops_listings set title='T', area_sqm=80, building_levels=4, floor=2, bathrooms=1, balconies=1, furnished=false, owner_name='Mr Owner',
   is_exclusive=false, view_type='Sea view', price=90000, currency='eur', facilities='{Elevator}', selling_points='sp', cover_photo_belongs=true where id='${L.id}'`);
 r = await db.query(`select completeness_pct, missing_fields from ops_listings where id='${L.id}'`);
-ok('photos uploaded = NO keeps the listing incomplete; buyer persona is optional', r.rows[0].completeness_pct < 100 && r.rows[0].missing_fields.join() === 'media_uploaded', JSON.stringify(r.rows[0]));
-await db.exec(`update ops_listings set media_uploaded=true, media_has_logo=true, media_edited=false where id='${L.id}'`);
+ok('photos not approved yet keeps the listing incomplete; buyer persona is optional', r.rows[0].completeness_pct < 100 && r.rows[0].missing_fields.join() === 'media_uploaded', JSON.stringify(r.rows[0]));
+await expectErr('staff cannot mark their own photos as ready', `update ops_listings set media_uploaded=true where id='${L.id}'`, /Only the manager/);
+await asUser(M); await db.exec(`update ops_listings set media_uploaded=true, media_has_logo=true, media_edited=false where id='${L.id}'`);
+r = await db.query(`select media_approved_by from ops_listings where id='${L.id}'`); ok('manager approves photos; approver recorded', r.rows[0].media_approved_by === M);
+await asUser(D1);
 r = await db.query(`select completeness_pct, currency from ops_listings where id='${L.id}'`);
 ok('100% after filling (false booleans count as filled), currency uppercased', r.rows[0].completeness_pct === 100 && r.rows[0].currency === 'EUR', JSON.stringify(r.rows[0]));
 await db.exec(`update ops_listings set status='ready_to_publish' where id='${L.id}'`);
@@ -91,7 +94,7 @@ await asUser(D1); await db.exec(`update ops_listings set status='ready_to_publis
 r = await db.query(`select paused_seconds, hold_started_at from ops_listings where id='${L.id}'`);
 ok('resume accumulates paused_seconds (~36000)', Math.abs(Number(r.rows[0].paused_seconds) - 36000) < 5 && r.rows[0].hold_started_at === null, String(r.rows[0].paused_seconds));
 await db.exec(`update ops_listings set status='published_claimed' where id='${L.id}'`);
-r = await db.query(`select date_published_claimed is not null c from ops_listings where id='${L.id}'`); ok('claim stamps date_published_claimed', r.rows[0].c);
+r = await db.query(`select date_published_claimed is not null c, published_claimed_by u from ops_listings where id='${L.id}'`); ok('claim stamps date_published_claimed + who uploaded it', r.rows[0].c && r.rows[0].u === D1);
 
 // other data_entry user: can read, cannot update
 await asUser(D2);

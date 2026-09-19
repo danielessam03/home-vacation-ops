@@ -44,7 +44,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.3.0';
+    const APP_VERSION = 'v1.4.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -122,7 +122,7 @@
     const FIELD_LABEL = {
       title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
       building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
-      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', media_uploaded: 'Photos uploaded', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited',
+      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', media_uploaded: 'Photos ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited', owner_name: 'Owner name', owner_phone: 'Owner phone',
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
       cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
@@ -432,7 +432,7 @@
       ['Media', ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
-      ['Source', ['source_type', 'source_name', 'source_contact', 'assigned_to']],
+      ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
     const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
@@ -490,6 +490,7 @@
         if (k === 'date_received') return <input type="datetime-local" className={inputCls(bad(k))} value={toLocalInput(f[k])} disabled={isEdit && me.role !== 'admin'} onChange={(e) => set(k, fromLocalInput(e.target.value))} />;
         if (k === 'facilities') return <FacilitiesInput bad={bad(k)} value={f.facilities} onChange={(v) => set(k, v)} options={cfg.facilities} />;
         if (k === 'selling_points') return <textarea rows={3} className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
+        if (k === 'media_uploaded' && !isMgr(me)) return <div className={`rounded-lg border px-3 py-2 text-sm ${f[k] === true ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>{f[k] === true ? 'Yes — approved by the manager' : f[k] === false ? 'Not ready — the manager asked for changes' : 'Waiting for the manager to review the photos'}</div>;
         if (BOOL_FIELDS.includes(k)) return <TriState bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} />;
         if (NUM_FIELDS.includes(k)) return <input type="number" inputMode="decimal" min="0" className={inputCls(bad(k))} value={f[k]} onChange={(e) => set(k, e.target.value)} />;
         return <input className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
@@ -500,6 +501,7 @@
         setBusy(true);
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
+        if (!isMgr(me)) delete payload.media_uploaded;
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || me.id; }
         const row = await save('listings', payload, isEdit ? listing.id : null);
@@ -526,8 +528,9 @@
           {FORM_GROUPS.map(([g, keys]) => (
             <fieldset key={g} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
+              {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -553,14 +556,14 @@
           if (flt.comp === 'complete' && l.completeness_pct < 100) return false;
           if (flt.from && new Date(l.date_received) < new Date(flt.from)) return false;
           if (flt.to && new Date(l.date_received) >= addDays(new Date(flt.to), 1)) return false;
-          if (s && !(`${l.reference_code} ${l.title || ''} ${l.source_name || ''}`.toLowerCase().includes(s))) return false;
+          if (s && !(`${l.reference_code} ${l.title || ''} ${l.source_name || ''} ${l.owner_name || ''} ${l.owner_phone || ''}`.toLowerCase().includes(s))) return false;
           return true;
         }).sort((a, b) => new Date(b.l.date_received) - new Date(a.l.date_received));
       }, [data.listings, q, flt, cfg.sla_hours, now]);
       const activeFilters = Object.values(flt).filter(Boolean).length;
       const exportCsv = () => downloadCSV(`hv-listings-${ymd(new Date())}.csv`,
-        ['reference_code', 'title', 'status', 'location', 'property_type', 'deal_type', 'price', 'currency', 'completeness_pct', 'missing_fields', 'date_received', 'date_published_claimed', 'date_published_verified', 'hours', 'sla_state', 'source_type', 'source_name', 'entered_by', 'website_url'],
-        rows.map(({ l, s }) => [l.reference_code, l.title, l.status, l.location, l.property_type, l.deal_type, l.price, l.currency, l.completeness_pct, l.missing_fields, l.date_received, l.date_published_claimed, l.date_published_verified, r1(s.hours), s.state, l.source_type, l.source_name, nameOf(l.entered_by), l.website_url]));
+        ['reference_code', 'title', 'owner_name', 'owner_phone', 'status', 'location', 'property_type', 'deal_type', 'price', 'currency', 'completeness_pct', 'missing_fields', 'date_received', 'date_published_claimed', 'date_published_verified', 'hours', 'sla_state', 'source_type', 'source_name', 'entered_by', 'website_url'],
+        rows.map(({ l, s }) => [l.reference_code, l.title, l.owner_name, l.owner_phone, l.status, l.location, l.property_type, l.deal_type, l.price, l.currency, l.completeness_pct, l.missing_fields, l.date_received, l.date_published_claimed, l.date_published_verified, r1(s.hours), s.state, l.source_type, l.source_name, nameOf(l.entered_by), l.website_url]));
 
       return (
         <div>
@@ -570,7 +573,7 @@
             <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
           </PageHeader>
           <div className="no-print mb-3 flex gap-2">
-            <input className={inputCls()} placeholder="Search ref code, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className={inputCls()} placeholder="Search ref code, owner, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
             <Btn kind={activeFilters ? 'soft' : 'ghost'} onClick={() => setShowFilters(!showFilters)}>Filters{activeFilters ? ` (${activeFilters})` : ''}</Btn>
           </div>
           {showFilters && (
@@ -601,18 +604,20 @@
                       {s.claimedNotFound && <Badge className="bg-rose-600 text-white">Claimed, not found</Badge>}
                       <span className="ml-auto text-xs text-slate-500">{fmtDate(l.date_received)}</span>
                     </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-slate-600"><span>Owner: <b className="text-slate-900">{l.owner_name || '—'}</b></span><span>Entered by <b className="text-slate-900">{nameOf(l.entered_by)}</b></span></div>
                   </Card>
                 ))}
               </div>
               {/* desktop: table */}
               <Card className="scroll-x hidden md:block">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Status', 'SLA', 'Complete', 'Price', 'Source', 'Entered by', 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', 'SLA', 'Complete', 'Price', 'Source', 'Entered by', 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
                   <tbody>
                     {rows.map(({ l, s }) => (
                       <tr key={l.id} onClick={() => go('listing', l.id)} className={`cursor-pointer border-l-4 border-t border-t-slate-100 hover:bg-slate-50 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
                         <td className="px-3 py-2 font-mono font-semibold">{l.reference_code}</td>
                         <td className="max-w-[16rem] truncate px-3 py-2">{l.title || `${l.property_type} · ${l.location}`}</td>
+                        <td className="px-3 py-2"><div className="max-w-[10rem] truncate font-medium">{l.owner_name || '—'}</div>{l.owner_phone && <div className="text-xs text-slate-500">{l.owner_phone}</div>}</td>
                         <td className="px-3 py-2"><StatusBadge status={l.status} />{s.claimedNotFound && <Badge className="ml-1 bg-rose-600 text-white">Not found</Badge>}</td>
                         <td className="px-3 py-2"><SlaChip listing={l} /></td>
                         <td className="px-3 py-2">{l.completeness_pct < 100 ? <Badge className="bg-rose-600 text-white">{l.completeness_pct}%</Badge> : <Badge className="bg-emerald-100 text-emerald-800">100%</Badge>}</td>
@@ -668,6 +673,8 @@
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>
+                <div className="mt-1 text-sm text-slate-700">Owner: <b>{l.owner_name || '—'}</b>{l.owner_phone ? <> · <a className="text-brand-700 underline" href={`tel:${l.owner_phone}`}>{l.owner_phone}</a></> : null}</div>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500"><span>Entered by <b className="text-slate-800">{nameOf(l.entered_by)}</b> · {fmtDateTime(l.created_at)}</span>{l.published_claimed_by && <span>Uploaded to website by <b className="text-slate-800">{nameOf(l.published_claimed_by)}</b> · {fmtDateTime(l.date_published_claimed)}</span>}{l.media_approved_by && <span>Photos approved by <b className="text-slate-800">{nameOf(l.media_approved_by)}</b> · {fmtDateTime(l.media_approved_at)}</span>}</div>
               </div>
               <div className="flex flex-col items-end gap-1.5"><StatusBadge status={l.status} /><SlaChip listing={l} /></div>
             </div>
@@ -780,7 +787,7 @@
     };
 
     // ---------- Bulk CSV import (backlog): map -> dry-run preview -> commit
-    const IMPORT_FIELDS = ['reference_code', 'title', 'location', 'property_type', 'deal_type', 'area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished',
+    const IMPORT_FIELDS = ['reference_code', 'title', 'owner_name', 'owner_phone', 'location', 'property_type', 'deal_type', 'area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished',
       'media_uploaded', 'media_has_logo', 'media_edited', 'is_exclusive', 'view_type', 'price', 'currency', 'facilities', 'selling_points', 'buyer_persona_nationality',
       'buyer_persona_age_range', 'buyer_persona_gender', 'cover_photo_belongs', 'date_received', 'source_type', 'source_name', 'source_contact'];
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -841,7 +848,7 @@
         await reloadTable('listing_channels');
         setBusy(false); setResult({ created: created.length, failed }); setStep('done');
       };
-      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 'yes', 'yes', 'no', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
+      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Owner name', '+20…', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 'yes', 'yes', 'no', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
 
       return (
         <Modal wide title="Import listings from CSV" onClose={onClose} footer={

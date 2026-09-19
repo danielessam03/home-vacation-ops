@@ -147,8 +147,17 @@ async function setPassword(env, { user_id, password }) {
 // =====================================================================================
 // Website verifier
 // =====================================================================================
+// home-vacation.com is on SiteGround, whose bot protection answers datacenter IPs (including Cloudflare Workers) with a captcha page
+// (HTTP 202 + /.well-known/sgcaptcha/). We never try to get around that: the run is logged as blocked and the crawl is done by
+// worker/run-local.mjs from the office PC instead. Matching, alerts and recurring tasks still run here every hour.
+class WpBlocked extends Error {}
 async function wpFetch(url) {
-  return fetch(url, { headers: { 'user-agent': UA, accept: '*/*' }, cf: { cacheTtl: 0 } });
+  const res = await fetch(url, { headers: { 'user-agent': UA, accept: '*/*' }, cf: { cacheTtl: 0 } });
+  if (res.status === 202 || res.status === 403 || res.status === 429) {
+    const body = await res.clone().text();
+    if (res.status !== 202 || /sgcaptcha|captcha/i.test(body)) throw new WpBlocked('Website bot protection blocked this request (HTTP ' + res.status + '). Crawl from the office PC: node worker/run-local.mjs');
+  }
+  return res;
 }
 
 const toIso = (s) => {
@@ -240,11 +249,12 @@ export async function runVerifier(env) {
     const known = new Map(knownRows.map((r) => [r.url, r]));
 
     let pages = null;
-    try { pages = await listViaRest(env, known); } catch (e) { errors.push(`rest: ${e.message}`); }
+    let blocked = false;
+    try { pages = await listViaRest(env, known); } catch (e) { blocked = e instanceof WpBlocked; errors.push(blocked ? e.message : `rest: ${e.message}`); }
     if (pages && pages.length) run.method = 'rest+html';
+    else if (blocked) { pages = []; run.method = 'blocked'; }
     else {
-      pages = await listViaSitemap(env);
-      run.method = 'sitemap+html';
+      try { pages = await listViaSitemap(env); run.method = 'sitemap+html'; } catch (e) { pages = []; run.method = 'failed'; errors.push(`sitemap: ${e.message}`); }
     }
     run.pages_listed = pages.length;
 

@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.dev.vars
+.supabase_token
+.cloudflare_token
+*.token
+.env

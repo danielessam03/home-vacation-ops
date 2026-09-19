@@ -1,0 +1,1942 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f3d4c" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>HV Ops</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f3d4c'/%3E%3Ctext x='32' y='42' font-family='Arial' font-weight='700' font-size='26' fill='white' text-anchor='middle'%3EHV%3C/text%3E%3C/svg%3E" />
+  <!-- PINNED CDNs — do not unpin, do not change data-presets (react ONLY) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: { brand: { 50:'#eef7f8',100:'#d5ebee',200:'#a9d5dc',500:'#1b7f93',600:'#14677a',700:'#0f5264',800:'#0f3d4c',900:'#0b2c38' } } } } };
+  </script>
+  <style>
+    html, body { background:#f4f6f8; -webkit-tap-highlight-color: transparent; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+    input, select, textarea { font-size:16px; }            /* stops iOS zoom-on-focus */
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    .scroll-x { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .num { font-variant-numeric: tabular-nums; }
+    .grid > * { min-width: 0; }                             /* long text must truncate, never widen the page */
+    main { overflow-x: clip; }
+    #boot { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:14px; }
+    @media print {
+      .no-print { display:none !important; }
+      html, body { background:#fff !important; }
+      main { padding:0 !important; margin:0 !important; }
+      .print-card { border:1px solid #cbd5e1 !important; box-shadow:none !important; break-inside:avoid; }
+      table { font-size:11px; }
+      @page { margin: 12mm; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="boot">Loading HV Ops…</div></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
+
+    // =========================================================================================
+    // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
+    // =========================================================================================
+    const APP_VERSION = 'v1.0.0';
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL';            // https://xxxx.supabase.co  (NEW HV Ops project)
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';  // anon / publishable key — safe here, RLS protects the data
+
+    const hasBuiltInConfig = /^https:\/\//.test(SUPABASE_URL);
+    let sbc = null;
+    const initSupabase = () => {
+      let url = hasBuiltInConfig ? SUPABASE_URL : null, key = hasBuiltInConfig ? SUPABASE_ANON_KEY : null;
+      try { url = url || localStorage.getItem('hvops_sb_url'); key = key || localStorage.getItem('hvops_sb_key'); } catch (e) {}
+      if (url && key) sbc = supabase.createClient(url, key);
+      return !!sbc;
+    };
+
+    // =========================================================================================
+    // HELPERS
+    // =========================================================================================
+    const pad = (n) => String(n).padStart(2, '0');
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+    const toLocalInput = (d) => { if (!d) return ''; const x = new Date(d); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`; };
+    const fromLocalInput = (s) => s ? new Date(s).toISOString() : null;
+    const ymd = (d) => { const x = new Date(d); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
+    const monthStart = (d = new Date()) => { const x = new Date(d); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-01`; };
+    const addMonths = (ym, n) => { const [y, m] = ym.split('-').map(Number); return monthStart(new Date(y, m - 1 + n, 1)); };
+    const monthLabel = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); };
+    const monthRange = (ym) => { const [y, m] = ym.split('-').map(Number); return { from: new Date(y, m - 1, 1), to: new Date(y, m, 1) }; };
+    const inRange = (d, r) => { if (!d) return false; const t = new Date(d).getTime(); return t >= r.from.getTime() && t < r.to.getTime(); };
+    const startOfDay = (d = new Date()) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const pct = (a, b) => b ? Math.round((1000 * a) / b) / 10 : null;
+    const r1 = (n) => n == null || isNaN(n) ? null : Math.round(n * 10) / 10;
+    const show = (v, unit = '') => v == null || v === '' ? '—' : `${typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 1 }) : v}${unit}`;
+    const money = (v, cur) => v == null || v === '' ? '—' : `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} ${cur || ''}`.trim();   // never converted
+    const titleCase = (s) => String(s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    const fmtHours = (h) => { if (h == null) return '—'; const m = Math.round(Math.abs(h) * 60); return m >= 2880 ? `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+    const friendlyError = (e) => {
+      const m = (e && e.message) || String(e);
+      if (e && e.code === 'PGRST116') return 'You do not have permission to change this record.';
+      if (/row-level security/i.test(m)) return 'You do not have permission for this action.';
+      if (/duplicate key/i.test(m)) return 'This already exists (duplicate).';
+      return m;
+    };
+
+    const ROLE_LABEL = { admin: 'Admin', manager: 'Marketing manager', data_entry: 'Data entry', marketing: 'Marketing' };
+    const isMgr = (me) => me && (me.role === 'admin' || me.role === 'manager');
+    const LISTING_STATUS = {
+      draft: ['Draft', 'bg-slate-100 text-slate-700'], ready_to_publish: ['Ready to publish', 'bg-sky-100 text-sky-800'],
+      published_claimed: ['Published (claimed)', 'bg-indigo-100 text-indigo-800'], verified_live: ['Verified live', 'bg-emerald-100 text-emerald-800'],
+      on_hold: ['On hold', 'bg-amber-100 text-amber-800'], rejected: ['Rejected', 'bg-rose-100 text-rose-800'], archived: ['Archived', 'bg-slate-200 text-slate-500'],
+    };
+    const SOURCE_TYPES = ['sales_agent', 'owner', 'developer', 'whatsapp', 'walk_in', 'other'];
+    const CHANNEL_STATUSES = ['not_started', 'in_progress', 'published', 'rejected'];
+    const TASK_COLS = [['todo', 'To do'], ['doing', 'Doing'], ['review', 'Review'], ['done', 'Done']];
+    const PRIORITY = { low: 'bg-slate-100 text-slate-600', normal: 'bg-sky-100 text-sky-700', high: 'bg-amber-100 text-amber-800', urgent: 'bg-rose-100 text-rose-700' };
+    const DELIV_STATUS = { planned: 'bg-slate-100 text-slate-700', submitted: 'bg-sky-100 text-sky-800', approved: 'bg-emerald-100 text-emerald-800', revision_requested: 'bg-amber-100 text-amber-800', late: 'bg-rose-100 text-rose-700', missed: 'bg-rose-200 text-rose-900' };
+    const SLA_STYLE = {
+      green: { chip: 'bg-emerald-100 text-emerald-800 border-emerald-200', bar: 'border-l-emerald-500', dot: 'bg-emerald-500', label: 'On track' },
+      yellow: { chip: 'bg-amber-100 text-amber-900 border-amber-200', bar: 'border-l-amber-500', dot: 'bg-amber-500', label: 'At risk' },
+      red: { chip: 'bg-rose-100 text-rose-800 border-rose-200', bar: 'border-l-rose-600', dot: 'bg-rose-600', label: 'Breached' },
+      none: { chip: 'bg-slate-100 text-slate-500 border-slate-200', bar: 'border-l-slate-300', dot: 'bg-slate-300', label: '—' },
+    };
+
+    // The 22 required fields + the rest of the form. type: text | num | bool | select | multi | area
+    const FIELD_LABEL = {
+      title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
+      building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
+      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link',
+      is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', facilities: 'Facilities', selling_points: 'Selling points',
+      buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
+      cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
+      source_name: 'Source name (who gave it)', source_contact: 'Source contact', assigned_to: 'Assigned to',
+    };
+    const POSITIVE_FIELDS = ['media_images_count', 'media_videos_count', 'area_sqm', 'price'];
+
+    // Mirrors fn_calc_completeness() so the meter is live while typing. The database value is the one that counts.
+    function calcCompleteness(row, required) {
+      const req = (required || []).filter((f) => f in FIELD_LABEL);
+      const missing = req.filter((f) => {
+        const v = row[f];
+        if (v == null) return true;
+        if (typeof v === 'string' && v.trim() === '') return true;
+        if (Array.isArray(v) && v.length === 0) return true;
+        if (POSITIVE_FIELDS.includes(f) && !(Number(v) > 0)) return true;
+        return false;
+      });
+      return { pct: req.length ? Math.floor((100 * (req.length - missing.length)) / req.length) : 100, missing };
+    }
+
+    // Mirrors vw_listing_sla. Clock: date_received -> verified on the website, minus on_hold time.
+    function slaOf(l, slaCfg, now = Date.now()) {
+      const warn = Number((slaCfg && slaCfg.warn) || 48), breach = Number((slaCfg && slaCfg.breach) || 72), grace = Number((slaCfg && slaCfg.claim_grace) || 24);
+      const verified = !!l.date_published_verified;
+      const end = verified ? new Date(l.date_published_verified).getTime() : now;
+      let paused = (l.paused_seconds || 0) * 1000;
+      const onHold = l.status === 'on_hold' && !verified;
+      if (onHold && l.hold_started_at) paused += now - new Date(l.hold_started_at).getTime();
+      const hours = Math.max(0, (end - new Date(l.date_received).getTime() - paused) / 36e5);
+      const state = ['rejected', 'archived'].includes(l.status) ? 'none' : hours < warn ? 'green' : hours <= breach ? 'yellow' : 'red';
+      const claimedNotFound = l.status === 'published_claimed' && !verified && l.date_published_claimed
+        && now - new Date(l.date_published_claimed).getTime() > grace * 36e5;
+      return { hours, state, verified, onHold, remaining: breach - hours, onTime: verified && hours <= breach, claimedNotFound, breach, warn };
+    }
+
+    // ---------- CSV
+    function parseCSV(text) {
+      const rows = []; let row = [], cur = '', q = false;
+      text = text.replace(/^﻿/, '');
+      const sep = (text.split('\n')[0] || '').includes(',') ? ',' : ';';     // Excel in some locales exports ';'
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+        else if (c === '"') q = true;
+        else if (c === sep) { row.push(cur); cur = ''; }
+        else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+        else if (c !== '\r') cur += c;
+      }
+      if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+      return rows.filter((r) => r.some((c) => String(c).trim() !== ''));
+    }
+    function downloadCSV(filename, headers, rows) {
+      const esc = (v) => { const s = v == null ? '' : Array.isArray(v) ? v.join('; ') : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const csv = [headers.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    // =========================================================================================
+    // UI ATOMS
+    // =========================================================================================
+    const ICONS = {
+      home: 'M3 11.5 12 4l9 7.5M5.5 10v9.5h13V10', list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+      tasks: 'M9 11l3 3 8-8M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h10', bell: 'M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9zm4 11a2 2 0 0 0 4 0',
+      agency: 'M4 20V6l8-3v17M12 9l8 2v9M2 20h20M8 9h.01M8 13h.01M8 17h.01M16 14h.01M16 17h.01', chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+      report: 'M7 3h8l4 4v14H7zM14 3v5h5M10 13h6M10 17h6', cog: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm8 3l2-1.5-2-3.5-2.4.8a7 7 0 0 0-1.6-.9L15.5 4h-4l-.5 2.4a7 7 0 0 0-1.6.9L7 6.5 5 10l2 1.5a7 7 0 0 0 0 1L5 14l2 3.5 2.4-.8c.5.4 1 .7 1.6.9l.5 2.4h4l.5-2.4c.6-.2 1.1-.5 1.6-.9l2.4.8 2-3.5-2-1.5a7 7 0 0 0 0-1z',
+      more: 'M5 12h.01M12 12h.01M19 12h.01', plus: 'M12 5v14M5 12h14', x: 'M6 6l12 12M18 6L6 18', copy: 'M9 9h10v11H9zM5 15V4h10', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+      check: 'M5 12l5 5 9-10', back: 'M15 5l-7 7 7 7', upload: 'M12 16V4M7 9l5-5 5 5M4 20h16', print: 'M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+    };
+    const Icon = ({ name, className = 'w-5 h-5' }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={ICONS[name] || ''} /></svg>
+    );
+    const Badge = ({ className = 'bg-slate-100 text-slate-700', children }) => <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${className}`}>{children}</span>;
+    const Btn = ({ kind = 'primary', className = '', ...p }) => {
+      const k = { primary: 'bg-brand-700 text-white hover:bg-brand-800', ghost: 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50', danger: 'bg-rose-600 text-white hover:bg-rose-700', ok: 'bg-emerald-600 text-white hover:bg-emerald-700', soft: 'bg-brand-50 text-brand-800 hover:bg-brand-100' }[kind];
+      return <button type="button" {...p} className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${k} ${className}`} />;
+    };
+    const Card = ({ className = '', children, ...p }) => <div {...p} className={`print-card bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>{children}</div>;
+    const inputCls = (bad) => `w-full rounded-lg border px-3 py-2 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 ${bad ? 'border-rose-500 ring-1 ring-rose-300' : 'border-slate-300'}`;
+    const Field = ({ label, bad, hint, children, className = '' }) => (
+      <label className={`block ${className}`}>
+        <span className={`mb-1 flex items-center gap-1.5 text-xs font-medium ${bad ? 'text-rose-700' : 'text-slate-600'}`}>{label}{bad && <span className="rounded bg-rose-600 px-1 text-[10px] text-white">required</span>}</span>
+        {children}
+        {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      </label>
+    );
+    const Select = ({ value, onChange, options, placeholder = 'Select…', bad, disabled }) => (
+      <select className={inputCls(bad)} value={value == null ? '' : value} disabled={disabled} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}>
+        <option value="">{placeholder}</option>
+        {options.map((o) => Array.isArray(o) ? <option key={o[0]} value={o[0]}>{o[1]}</option> : <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+    const TriState = ({ value, onChange, bad }) => (
+      <div className={`flex rounded-lg border overflow-hidden ${bad ? 'border-rose-500 ring-1 ring-rose-300' : 'border-slate-300'}`}>
+        {[[true, 'Yes'], [false, 'No']].map(([v, l]) => (
+          <button type="button" key={l} onClick={() => onChange(value === v ? null : v)} className={`flex-1 py-2 text-sm ${value === v ? 'bg-brand-700 text-white' : 'bg-white text-slate-700'}`}>{l}</button>
+        ))}
+      </div>
+    );
+    const Modal = ({ title, onClose, children, wide, footer }) => (
+      <div className="no-print fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-slate-900/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className={`flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl ${wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'}`}>
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <h3 className="font-semibold text-slate-900">{title}</h3>
+            <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close"><Icon name="x" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">{children}</div>
+          {footer && <div className="safe-bottom flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-3">{footer}</div>}
+        </div>
+      </div>
+    );
+    const PageHeader = ({ title, sub, children }) => (
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div><h1 className="text-xl font-bold text-slate-900">{title}</h1>{sub && <p className="text-sm text-slate-500">{sub}</p>}</div>
+        <div className="no-print flex flex-wrap items-center gap-2">{children}</div>
+      </div>
+    );
+    const Empty = ({ children }) => <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">{children}</div>;
+    const Meter = ({ value, className = '' }) => (
+      <div className={`h-2 w-full overflow-hidden rounded-full bg-slate-200 ${className}`}>
+        <div className={`h-full rounded-full ${value >= 100 ? 'bg-emerald-500' : value >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+      </div>
+    );
+    const Tile = ({ label, value, target, better = 'high', tone, onClick }) => {
+      let ok = null;
+      if (target != null && value != null && typeof value === 'number') ok = better === 'low' ? value <= target : value >= target;
+      return (
+        <Card className={`p-3 ${onClick ? 'cursor-pointer hover:border-brand-500' : ''} ${tone === 'red' ? 'border-rose-300 bg-rose-50' : ''}`} onClick={onClick}>
+          <div className="text-xs text-slate-500">{label}</div>
+          <div className={`num mt-1 text-2xl font-bold ${tone === 'red' ? 'text-rose-700' : 'text-slate-900'}`}>{typeof value === 'number' ? show(value) : value == null ? '—' : value}</div>
+          {target != null && <div className={`mt-0.5 text-xs ${ok == null ? 'text-slate-500' : ok ? 'text-emerald-700' : 'text-rose-700'}`}>Target {show(Number(target))}{ok == null ? '' : ok ? ' ✓' : ' ✗'}</div>}
+        </Card>
+      );
+    };
+    const Tabs = ({ tabs, value, onChange }) => (
+      <div className="no-print scroll-x mb-4 flex gap-1 border-b border-slate-200">
+        {tabs.map(([k, l, n]) => (
+          <button key={k} onClick={() => onChange(k)} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${value === k ? 'border-brand-700 text-brand-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            {l}{n ? <span className="ml-1.5 rounded-full bg-rose-600 px-1.5 text-[10px] text-white">{n}</span> : null}
+          </button>
+        ))}
+      </div>
+    );
+    const MonthPicker = ({ value, onChange }) => (
+      <div className="no-print inline-flex items-center rounded-lg border border-slate-300 bg-white">
+        <button className="px-2.5 py-2 text-slate-600" onClick={() => onChange(addMonths(value, -1))} aria-label="Previous month">‹</button>
+        <span className="min-w-[8.5rem] text-center text-sm font-medium">{monthLabel(value)}</span>
+        <button className="px-2.5 py-2 text-slate-600" onClick={() => onChange(addMonths(value, 1))} aria-label="Next month">›</button>
+      </div>
+    );
+    const SlaChip = ({ listing }) => {
+      const { cfg, now } = useApp();
+      const s = slaOf(listing, cfg.sla_hours, now);
+      if (s.state === 'none') return null;
+      const st = SLA_STYLE[s.state];
+      const text = s.verified ? `Live in ${fmtHours(s.hours)}` : s.onHold ? `Paused · ${fmtHours(s.hours)}` : s.remaining >= 0 ? `${fmtHours(s.remaining)} left` : `${fmtHours(-s.remaining)} over`;
+      return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${st.chip}`}><span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{text}</span>;
+    };
+    const StatusBadge = ({ status }) => { const s = LISTING_STATUS[status] || [status, '']; return <Badge className={s[1]}>{s[0]}</Badge>; };
+    // Single-series bar chart. Values are labelled directly so no axis is needed.
+    const Bars = ({ rows, unit = '' }) => {
+      const max = Math.max(1, ...rows.map((r) => r.value || 0));
+      return (
+        <div className="flex h-36 items-end gap-2">
+          {rows.map((r) => (
+            <div key={r.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1">
+              <span className="num text-[11px] font-medium text-slate-700">{r.value == null ? '—' : show(r.value, unit)}</span>
+              <div className="w-full max-w-[44px] rounded-t bg-brand-500" style={{ height: `${Math.max(2, (100 * (r.value || 0)) / max)}px` }} />
+              <span className="w-full truncate text-center text-[11px] text-slate-500">{r.label}</span>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    const AppCtx = createContext(null);
+    const useApp = () => useContext(AppCtx);
+
+    // =========================================================================================
+    // KPI + REPORT MATH (pure functions over the loaded data; same rules as vw_listing_sla / vw_user_kpis)
+    // =========================================================================================
+    const SHOOT_TYPES = ['photo_shoot', 'video_shoot', 'shoot'];
+
+    function listingStats(listings, channels, slaCfg, now) {
+      const live = listings.filter((l) => l.status !== 'archived');
+      const s = live.map((l) => slaOf(l, slaCfg, now));
+      const verified = s.filter((x) => x.verified);
+      const ids = new Set(live.filter((l) => l.status !== 'rejected').map((l) => l.id));
+      const ch = channels.filter((c) => ids.has(c.listing_id));
+      return {
+        entered: live.length,
+        verified: verified.length,
+        avg_hours: r1(avg(verified.map((x) => x.hours))),
+        on_time_pct: pct(verified.filter((x) => x.onTime).length, verified.length),
+        avg_completeness: r1(avg(live.map((l) => l.completeness_pct))),
+        breached: s.filter((x, i) => x.state === 'red' && live[i].status !== 'rejected').length,
+        rejected: live.filter((l) => l.status === 'rejected').length,
+        claimed_not_found: s.filter((x) => x.claimedNotFound).length,
+        portal_coverage_pct: pct(ch.filter((c) => c.status === 'published').length, ch.length),
+      };
+    }
+
+    function userKpis(user, range, data, slaCfg, now) {
+      const ls = data.listings.filter((l) => l.entered_by === user.id && inRange(l.date_received, range));
+      const st = listingStats(ls, data.listing_channels, slaCfg, now);
+      const ts = data.tasks.filter((t) => t.assigned_to === user.id && t.status !== 'cancelled' && inRange(t.due_at || t.created_at, range));
+      const done = ts.filter((t) => t.status === 'done');
+      const onTime = done.filter((t) => !t.due_at || (t.completed_at && new Date(t.completed_at) <= new Date(t.due_at)));
+      const lateOpen = ts.filter((t) => t.status !== 'done' && t.due_at && new Date(t.due_at).getTime() < now);
+      const shootDone = done.filter((t) => SHOOT_TYPES.includes(t.task_type));
+      const mediaListingIds = new Set(done.filter((t) => t.listing_id).map((t) => t.listing_id));
+      return {
+        user_id: user.id, name: user.full_name || user.email, role: user.role,
+        listings_entered: st.entered, avg_completeness: st.avg_completeness, avg_hours_to_publish: st.avg_hours,
+        on_time_pct: st.on_time_pct, rejected_count: st.rejected, portal_coverage_pct: st.portal_coverage_pct,
+        claimed_not_found: st.claimed_not_found, verified: st.verified, breached: st.breached,
+        tasks_completed: done.length, tasks_due: ts.length, tasks_late: lateOpen.length + (done.length - onTime.length),
+        tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
+        deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,
+        shoots_completed: shootDone.length,
+        media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_images_count > 0 && l.media_videos_count > 0).length,
+      };
+    }
+
+    function agencyScorecard(agency, ym, data) {
+      const ds = data.agency_deliverables.filter((d) => d.agency_id === agency.id && d.period_month === ym);
+      const ms = Object.fromEntries(data.agency_metrics.filter((m) => m.agency_id === agency.id && m.period_month === ym).map((m) => [m.metric_key, Number(m.metric_value)]));
+      const planned = ds.reduce((a, d) => a + (d.planned_qty || 0), 0), delivered = ds.reduce((a, d) => a + (d.delivered_qty || 0), 0);
+      const deliveredItems = ds.filter((d) => d.delivered_at);
+      const onTime = deliveredItems.filter((d) => d.due_date && ymd(d.delivered_at) <= d.due_date);
+      const revisions = ds.reduce((a, d) => a + (d.revisions_count || 0), 0);
+      const leads = ms.leads != null ? ms.leads : ms.organic_leads;
+      const spend = ms.ad_spend != null ? ms.ad_spend : null;
+      // cost per lead = ad spend / leads. For an agency with no ad spend (SEO) the monthly fee is the cost.
+      const cost = spend != null ? spend : agency.monthly_fee != null ? Number(agency.monthly_fee) : null;
+      return {
+        label: `${agency.display_name} — ${monthLabel(ym)}`, agency: agency.display_name, month: ym, items: ds.length, planned, delivered,
+        delivery_rate: pct(delivered, planned), on_time_pct: pct(onTime.length, deliveredItems.length), revisions,
+        revision_rate: pct(revisions, delivered), leads: leads == null ? null : leads, spend,
+        cpl: cost != null && leads ? r1(cost / leads) : null, cpl_basis: spend != null ? 'ad spend' : 'monthly fee', currency: agency.currency || '',
+      };
+    }
+
+    function buildReport(range, label, data, cfg, now) {
+      const sla = cfg.sla_hours;
+      const received = data.listings.filter((l) => l.status !== 'archived' && inRange(l.date_received, range));
+      const verifiedInRange = data.listings.filter((l) => inRange(l.date_published_verified, range));
+      const open = data.listings.filter((l) => !['archived', 'rejected', 'verified_live'].includes(l.status));
+      const openSla = open.map((l) => slaOf(l, sla, now));
+      const tasksDue = data.tasks.filter((t) => t.status !== 'cancelled' && inRange(t.due_at, range));
+      const group = (keyFn, labelFn) => {
+        const m = new Map();
+        received.forEach((l) => { const k = keyFn(l) || '—'; if (!m.has(k)) m.set(k, []); m.get(k).push(l); });
+        return [...m.entries()].map(([k, ls]) => ({ label: labelFn ? labelFn(k) : k, ...listingStats(ls, data.listing_channels, sla, now) })).sort((a, b) => b.entered - a.entered);
+      };
+      const nameOf = (id) => { const p = data.profiles.find((x) => x.id === id); return p ? p.full_name || p.email : '—'; };
+      const recIds = new Set(received.filter((l) => l.status !== 'rejected').map((l) => l.id));
+      const chRows = data.listing_channels.filter((c) => recIds.has(c.listing_id));
+      const channels = [...new Set(chRows.map((c) => c.channel))].map((c) => {
+        const rows = chRows.filter((x) => x.channel === c);
+        return { label: (cfg.portal_labels || {})[c] || titleCase(c), total: rows.length, published: rows.filter((x) => x.status === 'published').length,
+          in_progress: rows.filter((x) => x.status === 'in_progress').length, rejected: rows.filter((x) => x.status === 'rejected').length,
+          coverage_pct: pct(rows.filter((x) => x.status === 'published').length, rows.length) };
+      });
+      const months = [], lastMonth = monthStart(addDays(range.to, -1));
+      for (let m = monthStart(range.from); m <= lastMonth && months.length < 24; m = addMonths(m, 1)) months.push(m);
+      const recSla = received.map((l) => slaOf(l, sla, now));
+      return {
+        label, from: ymd(range.from), to: ymd(addDays(range.to, -1)), generated_at: new Date(now).toISOString(),
+        summary: {
+          entered: received.length, verified: verifiedInRange.length,
+          breaches_open: openSla.filter((s) => s.state === 'red').length,
+          incomplete_open: open.filter((l) => l.completeness_pct < 100).length,
+          claimed_not_found: openSla.filter((s) => s.claimedNotFound).length,
+          tasks_completed: tasksDue.filter((t) => t.status === 'done').length, tasks_due: tasksDue.length,
+        },
+        sla: { green: recSla.filter((s) => s.state === 'green').length, yellow: recSla.filter((s) => s.state === 'yellow').length, red: recSla.filter((s) => s.state === 'red').length },
+        kpis: data.profiles.filter((p) => p.is_active && p.role !== 'admin').map((p) => userKpis(p, range, data, sla, now)),
+        breakdowns: {
+          person: group((l) => l.entered_by, nameOf), source: group((l) => l.source_type, titleCase),
+          source_name: group((l) => `${titleCase(l.source_type)} · ${l.source_name}`), location: group((l) => l.location),
+          channel: channels, agency: data.agencies.flatMap((a) => months.map((m) => agencyScorecard(a, m, data))).filter((r) => r.items > 0 || r.leads != null),
+        },
+      };
+    }
+
+    // =========================================================================================
+    // LISTINGS
+    // =========================================================================================
+    const ReasonModal = ({ title, label, confirmLabel, kind = 'primary', onClose, onConfirm }) => {
+      const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
+      return (
+        <Modal title={title} onClose={onClose} footer={<>
+          <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn kind={kind} disabled={!reason.trim() || busy} onClick={async () => { setBusy(true); await onConfirm(reason.trim()); setBusy(false); }}>{confirmLabel}</Btn></>}>
+          <Field label={label} bad={!reason.trim()}><textarea rows={3} className={inputCls(!reason.trim())} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus /></Field>
+        </Modal>
+      );
+    };
+
+    const FORM_GROUPS = [
+      ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
+      ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
+      ['Media', ['media_images_count', 'media_videos_count', 'media_drive_link', 'cover_photo_belongs']],
+      ['Commercial', ['price', 'currency', 'is_exclusive']],
+      ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
+      ['Source', ['source_type', 'source_name', 'source_contact', 'assigned_to']],
+    ];
+    const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs'];
+    const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
+
+    const FacilitiesInput = ({ value, onChange, options, bad }) => {
+      const [extra, setExtra] = useState('');
+      const all = [...new Set([...(options || []), ...(value || [])])];
+      const toggle = (o) => onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o]);
+      const add = () => { const v = extra.trim(); if (v && !value.includes(v)) onChange([...value, v]); setExtra(''); };
+      return (
+        <div className={`rounded-lg border p-2 ${bad ? 'border-rose-500 ring-1 ring-rose-300' : 'border-slate-300'}`}>
+          <div className="flex flex-wrap gap-1.5">
+            {all.map((o) => <button type="button" key={o} onClick={() => toggle(o)} className={`rounded-full border px-2.5 py-1 text-xs ${value.includes(o) ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-700'}`}>{o}</button>)}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input className={inputCls()} placeholder="Add another facility…" value={extra} onChange={(e) => setExtra(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
+            <Btn kind="ghost" onClick={add}>Add</Btn>
+          </div>
+        </div>
+      );
+    };
+
+    const ListingForm = ({ listing, onClose, onSaved }) => {
+      const { me, cfg, data, save, reloadWhere, toast } = useApp();
+      const isEdit = !!listing;
+      const [f, setF] = useState(() => {
+        const base = { facilities: [], currency: null, date_received: new Date().toISOString(), source_type: null, media_images_count: '', media_videos_count: '' };
+        const src = listing ? { ...listing } : base;
+        NUM_FIELDS.forEach((k) => { src[k] = src[k] == null || (!listing && src[k] === 0) ? '' : String(src[k]); });
+        if (listing && listing.media_images_count === 0) src.media_images_count = '0';
+        if (listing && listing.media_videos_count === 0) src.media_videos_count = '0';
+        src.facilities = src.facilities || [];
+        return src;
+      });
+      const [busy, setBusy] = useState(false);
+      const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const normalized = useMemo(() => { const o = { ...f }; NUM_FIELDS.forEach((k) => { o[k] = f[k] === '' || f[k] == null ? null : Number(f[k]); }); return o; }, [f]);
+      const comp = calcCompleteness(normalized, cfg.required_fields);
+      const hardMissing = ALWAYS_REQUIRED.filter((k) => !normalized[k] || (typeof normalized[k] === 'string' && !normalized[k].trim()));
+      const bad = (k) => comp.missing.includes(k) || hardMissing.includes(k);
+      const staff = data.profiles.filter((p) => p.is_active);
+      const dup = !isEdit && f.title && data.listings.find((l) => l.title && l.title.trim().toLowerCase() === f.title.trim().toLowerCase());
+
+      const control = (k) => {
+        if (k === 'location') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={Object.keys(cfg.location_codes || {}).sort()} disabled={isEdit} />;
+        if (k === 'property_type') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={Object.keys(cfg.unit_type_codes || {}).sort()} disabled={isEdit} />;
+        if (k === 'deal_type') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={[['sale', 'Sale'], ['rent', 'Rent']]} disabled={isEdit} />;
+        if (k === 'currency') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.currencies || ['EUR', 'USD', 'EGP']} />;
+        if (k === 'view_type') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.view_types || []} />;
+        if (k === 'buyer_persona_age_range') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={cfg.age_ranges || []} />;
+        if (k === 'buyer_persona_gender') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={['Any', 'Male', 'Female', 'Couples', 'Families']} />;
+        if (k === 'source_type') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={SOURCE_TYPES.map((s) => [s, titleCase(s)])} />;
+        if (k === 'assigned_to') return <Select value={f[k]} onChange={(v) => set(k, v)} options={staff.map((p) => [p.id, p.full_name || p.email])} placeholder="Me (default)" />;
+        if (k === 'date_received') return <input type="datetime-local" className={inputCls(bad(k))} value={toLocalInput(f[k])} disabled={isEdit && me.role !== 'admin'} onChange={(e) => set(k, fromLocalInput(e.target.value))} />;
+        if (k === 'facilities') return <FacilitiesInput bad={bad(k)} value={f.facilities} onChange={(v) => set(k, v)} options={cfg.facilities} />;
+        if (k === 'selling_points') return <textarea rows={3} className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
+        if (BOOL_FIELDS.includes(k)) return <TriState bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} />;
+        if (NUM_FIELDS.includes(k)) return <input type="number" inputMode="decimal" min="0" className={inputCls(bad(k))} value={f[k]} onChange={(e) => set(k, e.target.value)} />;
+        return <input className={inputCls(bad(k))} value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />;
+      };
+
+      const submit = async () => {
+        if (hardMissing.length) { toast(`Needed to save: ${hardMissing.map((k) => FIELD_LABEL[k]).join(', ')}`, 'error'); return; }
+        setBusy(true);
+        const payload = {};
+        FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
+        ['media_images_count', 'media_videos_count'].forEach((k) => { if (payload[k] == null) payload[k] = 0; });
+        if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
+        else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || me.id; }
+        const row = await save('listings', payload, isEdit ? listing.id : null);
+        setBusy(false);
+        if (!row) return;
+        if (!isEdit) await reloadWhere('listing_channels', 'listing_id', row.id);   // created by the database trigger
+        toast(isEdit ? 'Listing saved' : `Created ${row.reference_code}`);
+        onSaved(row);
+      };
+
+      return (
+        <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : 'New listing'} onClose={onClose} footer={<>
+          <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
+          <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
+          <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
+            <div className="mb-1.5 flex items-center justify-between text-sm">
+              <span className="font-semibold text-slate-800">Completeness {comp.pct}%</span>
+              {comp.missing.length > 0 && <Badge className="bg-rose-600 text-white">{comp.missing.length} missing</Badge>}
+            </div>
+            <Meter value={comp.pct} />
+          </div>
+          {dup && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Possible duplicate: {dup.reference_code} has the same title.</div>}
+          {isEdit && <p className="mb-3 text-xs text-slate-500">Location, type and sale/rent are part of the reference code and cannot change after creation.</p>}
+          {FORM_GROUPS.map(([g, keys]) => (
+            <fieldset key={g} className="mb-5">
+              <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'media_drive_link', 'source_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+              </div>
+            </fieldset>
+          ))}
+        </Modal>
+      );
+    };
+
+    const ListingsPage = () => {
+      const { me, data, cfg, now, go, nameOf } = useApp();
+      const [q, setQ] = useState(''); const [flt, setFlt] = useState({ status: null, sla: null, location: null, source: null, by: null, comp: null, from: '', to: '' });
+      const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false);
+      const setFilter = (k, v) => setFlt((p) => ({ ...p, [k]: v }));
+      const rows = useMemo(() => {
+        const s = q.trim().toLowerCase();
+        return data.listings.map((l) => ({ l, s: slaOf(l, cfg.sla_hours, now) })).filter(({ l, s: sl }) => {
+          if (!flt.status && l.status === 'archived') return false;
+          if (flt.status && l.status !== flt.status) return false;
+          if (flt.sla && (sl.state !== flt.sla || sl.verified)) return false;
+          if (flt.location && l.location !== flt.location) return false;
+          if (flt.source && l.source_type !== flt.source) return false;
+          if (flt.by && l.entered_by !== flt.by) return false;
+          if (flt.comp === 'incomplete' && l.completeness_pct >= 100) return false;
+          if (flt.comp === 'complete' && l.completeness_pct < 100) return false;
+          if (flt.from && new Date(l.date_received) < new Date(flt.from)) return false;
+          if (flt.to && new Date(l.date_received) >= addDays(new Date(flt.to), 1)) return false;
+          if (s && !(`${l.reference_code} ${l.title || ''} ${l.source_name || ''}`.toLowerCase().includes(s))) return false;
+          return true;
+        }).sort((a, b) => new Date(b.l.date_received) - new Date(a.l.date_received));
+      }, [data.listings, q, flt, cfg.sla_hours, now]);
+      const activeFilters = Object.values(flt).filter(Boolean).length;
+      const exportCsv = () => downloadCSV(`hv-listings-${ymd(new Date())}.csv`,
+        ['reference_code', 'title', 'status', 'location', 'property_type', 'deal_type', 'price', 'currency', 'completeness_pct', 'missing_fields', 'date_received', 'date_published_claimed', 'date_published_verified', 'hours', 'sla_state', 'source_type', 'source_name', 'entered_by', 'website_url'],
+        rows.map(({ l, s }) => [l.reference_code, l.title, l.status, l.location, l.property_type, l.deal_type, l.price, l.currency, l.completeness_pct, l.missing_fields, l.date_received, l.date_published_claimed, l.date_published_verified, r1(s.hours), s.state, l.source_type, l.source_name, nameOf(l.entered_by), l.website_url]));
+
+      return (
+        <div>
+          <PageHeader title="Listings" sub={`${rows.length} shown`}>
+            <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
+            <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>
+            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
+          </PageHeader>
+          <div className="no-print mb-3 flex gap-2">
+            <input className={inputCls()} placeholder="Search ref code, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Btn kind={activeFilters ? 'soft' : 'ghost'} onClick={() => setShowFilters(!showFilters)}>Filters{activeFilters ? ` (${activeFilters})` : ''}</Btn>
+          </div>
+          {showFilters && (
+            <Card className="no-print mb-3 grid grid-cols-2 gap-3 p-3 sm:grid-cols-4">
+              <Field label="Status"><Select value={flt.status} onChange={(v) => setFilter('status', v)} options={Object.entries(LISTING_STATUS).map(([k, v]) => [k, v[0]])} placeholder="All (not archived)" /></Field>
+              <Field label="SLA state (open)"><Select value={flt.sla} onChange={(v) => setFilter('sla', v)} options={[['green', 'On track'], ['yellow', 'At risk'], ['red', 'Breached']]} placeholder="All" /></Field>
+              <Field label="Location"><Select value={flt.location} onChange={(v) => setFilter('location', v)} options={Object.keys(cfg.location_codes || {}).sort()} placeholder="All" /></Field>
+              <Field label="Source"><Select value={flt.source} onChange={(v) => setFilter('source', v)} options={SOURCE_TYPES.map((s) => [s, titleCase(s)])} placeholder="All" /></Field>
+              <Field label="Entered by"><Select value={flt.by} onChange={(v) => setFilter('by', v)} options={data.profiles.map((p) => [p.id, p.full_name || p.email])} placeholder="Anyone" /></Field>
+              <Field label="Completeness"><Select value={flt.comp} onChange={(v) => setFilter('comp', v)} options={[['incomplete', 'Incomplete'], ['complete', '100%']]} placeholder="All" /></Field>
+              <Field label="Received from"><input type="date" className={inputCls()} value={flt.from} onChange={(e) => setFilter('from', e.target.value)} /></Field>
+              <Field label="Received to"><input type="date" className={inputCls()} value={flt.to} onChange={(e) => setFilter('to', e.target.value)} /></Field>
+            </Card>
+          )}
+          {!rows.length ? <Empty>No listings match. Create the first one with “New listing”.</Empty> : (
+            <>
+              {/* phone: cards */}
+              <div className="space-y-2 md:hidden">
+                {rows.map(({ l, s }) => (
+                  <Card key={l.id} className={`cursor-pointer border-l-4 p-3 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`} onClick={() => go('listing', l.id)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0"><div className="font-mono text-sm font-bold text-slate-900">{l.reference_code}</div><div className="truncate text-sm text-slate-600">{l.title || `${l.property_type} · ${l.location}`}</div></div>
+                      <SlaChip listing={l} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <StatusBadge status={l.status} />
+                      {l.completeness_pct < 100 && <Badge className="bg-rose-600 text-white">{l.completeness_pct}% · {(l.missing_fields || []).length} missing</Badge>}
+                      {s.claimedNotFound && <Badge className="bg-rose-600 text-white">Claimed, not found</Badge>}
+                      <span className="ml-auto text-xs text-slate-500">{fmtDate(l.date_received)}</span>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              {/* desktop: table */}
+              <Card className="scroll-x hidden md:block">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Status', 'SLA', 'Complete', 'Price', 'Source', 'Entered by', 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
+                  <tbody>
+                    {rows.map(({ l, s }) => (
+                      <tr key={l.id} onClick={() => go('listing', l.id)} className={`cursor-pointer border-l-4 border-t border-t-slate-100 hover:bg-slate-50 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
+                        <td className="px-3 py-2 font-mono font-semibold">{l.reference_code}</td>
+                        <td className="max-w-[16rem] truncate px-3 py-2">{l.title || `${l.property_type} · ${l.location}`}</td>
+                        <td className="px-3 py-2"><StatusBadge status={l.status} />{s.claimedNotFound && <Badge className="ml-1 bg-rose-600 text-white">Not found</Badge>}</td>
+                        <td className="px-3 py-2"><SlaChip listing={l} /></td>
+                        <td className="px-3 py-2">{l.completeness_pct < 100 ? <Badge className="bg-rose-600 text-white">{l.completeness_pct}%</Badge> : <Badge className="bg-emerald-100 text-emerald-800">100%</Badge>}</td>
+                        <td className="num whitespace-nowrap px-3 py-2">{money(l.price, l.currency)}</td>
+                        <td className="px-3 py-2"><div className="max-w-[10rem] truncate">{l.source_name}</div><div className="text-xs text-slate-500">{titleCase(l.source_type)}</div></td>
+                        <td className="px-3 py-2">{nameOf(l.entered_by)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{fmtDateTime(l.date_received)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </>
+          )}
+          {form && <ListingForm onClose={() => setForm(false)} onSaved={(row) => { setForm(false); go('listing', row.id); }} />}
+          {imp && <CsvImport onClose={() => setImp(false)} />}
+        </div>
+      );
+    };
+
+    const ListingDetail = ({ id }) => {
+      const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
+      const l = data.listings.find((x) => x.id === id);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false);
+      const channels = data.listing_channels.filter((c) => c.listing_id === id);
+      const mgr = isMgr(me);
+      useEffect(() => {
+        if (!mgr || !l) return;
+        const ids = [id, ...channels.map((c) => c.id)];
+        sbc.from('audit_log').select('*').in('record_id', ids).order('changed_at', { ascending: false }).limit(300).then(({ data: rows }) => setAudit(rows || []));
+      }, [id, l && l.updated_at, channels.length]);
+      if (!l) return <Empty>Listing not found.</Empty>;
+      const s = slaOf(l, cfg.sla_hours, now);
+      const canEdit = mgr || l.entered_by === me.id || l.assigned_to === me.id;
+      const setStatus = (status, extra = {}) => save('listings', { status, ...extra }, l.id).then((row) => { if (row) toast(`Status: ${LISTING_STATUS[status][0]}`); return row; });
+      const copy = async () => { try { await navigator.clipboard.writeText(l.reference_code); } catch (e) { const t = document.createElement('textarea'); t.value = l.reference_code; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } setCopied(true); setTimeout(() => setCopied(false), 1500); };
+      const missingChannels = Object.keys(cfg.portal_labels || {}).filter((c) => !channels.some((x) => x.channel === c));
+      const timeline = [
+        ['Info received — clock starts', l.date_received], ['Record created in HV Ops', l.created_at],
+        l.paused_seconds > 0 || s.onHold ? [`On hold total ${fmtHours(((l.paused_seconds || 0) + (s.onHold && l.hold_started_at ? (now - new Date(l.hold_started_at)) / 1000 : 0)) / 3600)} (excluded)`, l.hold_started_at] : null,
+        ['Marked as published by staff', l.date_published_claimed], ['Verified live on website — clock stops', l.date_published_verified],
+      ].filter(Boolean);
+
+      return (
+        <div>
+          <button className="no-print mb-3 inline-flex items-center gap-1 text-sm text-brand-700" onClick={() => go('listings')}><Icon name="back" className="h-4 w-4" />All listings</button>
+          <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-2xl font-black tracking-wide text-slate-900">{l.reference_code}</span>
+                  <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
+                <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>
+              </div>
+              <div className="flex flex-col items-end gap-1.5"><StatusBadge status={l.status} /><SlaChip listing={l} /></div>
+            </div>
+            {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(l.date_published_claimed)} but the verifier cannot find this File Ref on the website.</div>}
+            {l.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {l.hold_reason}</div>}
+            {l.status === 'rejected' && <div className="mt-3 rounded-lg bg-rose-100 p-2.5 text-sm text-rose-900">Rejected: {l.rejection_reason}</div>}
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-xs"><span className="font-medium text-slate-700">Completeness {l.completeness_pct}%</span>{l.completeness_pct < 100 && <span className="font-medium text-rose-700">{(l.missing_fields || []).length} missing</span>}</div>
+              <Meter value={l.completeness_pct} />
+              {l.completeness_pct < 100 && <div className="mt-2 flex flex-wrap gap-1">{(l.missing_fields || []).map((m) => <Badge key={m} className="bg-rose-100 text-rose-800">{FIELD_LABEL[m] || m}</Badge>)}</div>}
+            </div>
+            {canEdit && (
+              <div className="no-print mt-4 flex flex-wrap gap-2">
+                {!['archived'].includes(l.status) && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
+                {l.status === 'draft' && <Btn disabled={l.completeness_pct < 100} title={l.completeness_pct < 100 ? 'Complete all required fields first' : ''} onClick={() => setStatus('ready_to_publish')}>Ready to publish</Btn>}
+                {l.status === 'ready_to_publish' && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
+                {l.status === 'ready_to_publish' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Back to draft</Btn>}
+                {['draft', 'ready_to_publish', 'published_claimed'].includes(l.status) && <Btn kind="ghost" onClick={() => setReason('hold')}>Put on hold</Btn>}
+                {l.status === 'on_hold' && <Btn onClick={() => setStatus(l.status_before_hold || 'draft')}>Resume (restart clock)</Btn>}
+                {mgr && !['rejected', 'archived', 'verified_live'].includes(l.status) && <Btn kind="danger" onClick={() => setReason('reject')}>Reject</Btn>}
+                {mgr && l.status === 'rejected' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Reopen as draft</Btn>}
+                {mgr && l.status !== 'archived' && <Btn kind="ghost" onClick={() => { if (confirm('Archive this listing? It is hidden, never deleted.')) setStatus('archived'); }}>Archive</Btn>}
+              </div>
+            )}
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="space-y-4 lg:col-span-2">
+              {FORM_GROUPS.map(([g, keys]) => (
+                <Card key={g} className="p-4">
+                  <h3 className="mb-2 text-sm font-semibold text-brand-800">{g}</h3>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+                    {keys.map((k) => {
+                      const v = l[k]; const miss = (l.missing_fields || []).includes(k);
+                      const text = k === 'assigned_to' ? nameOf(v) : k === 'date_received' ? fmtDateTime(v) : k === 'price' ? money(v, l.currency) : BOOL_FIELDS.includes(k) ? (v == null ? null : v ? 'Yes' : 'No') : Array.isArray(v) ? v.join(', ') : ['source_type', 'deal_type'].includes(k) ? titleCase(v) : v;
+                      return (
+                        <div key={k} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ''}>
+                          <dt className="text-xs text-slate-500">{FIELD_LABEL[k]}</dt>
+                          <dd className={miss ? 'font-medium text-rose-700' : 'break-words text-slate-900'}>
+                            {miss ? 'Missing' : k === 'media_drive_link' && v ? <a className="text-brand-700 underline" href={v} target="_blank" rel="noreferrer">Open folder</a> : text == null || text === '' ? '—' : String(text)}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </Card>
+              ))}
+            </div>
+            <div className="space-y-4">
+              <Card className="p-4">
+                <h3 className="mb-3 text-sm font-semibold text-brand-800">Publishing channels</h3>
+                <div className="space-y-3">
+                  {channels.map((c) => <ChannelRow key={c.id} c={c} canEdit={canEdit} />)}
+                  {canEdit && missingChannels.length > 0 && (
+                    <Select value={null} placeholder="+ Add channel…" options={missingChannels.map((c) => [c, cfg.portal_labels[c]])} onChange={(v) => v && save('listing_channels', { listing_id: l.id, channel: v })} />
+                  )}
+                </div>
+                {l.website_url && <a className="mt-3 inline-flex items-center gap-1 text-sm text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer"><Icon name="link" className="h-4 w-4" />View on website</a>}
+              </Card>
+              <Card className="p-4">
+                <h3 className="mb-3 text-sm font-semibold text-brand-800">SLA timeline</h3>
+                <ol className="space-y-2 border-l-2 border-slate-200 pl-3 text-sm">
+                  {timeline.map(([label, at]) => <li key={label}><div className={at ? 'text-slate-900' : 'text-slate-400'}>{label}</div><div className="text-xs text-slate-500">{at ? fmtDateTime(at) : 'pending'}</div></li>)}
+                </ol>
+                <div className="mt-3 text-sm">{s.verified ? <>Hours to publish: <b className="num">{r1(s.hours)}</b> — {s.onTime ? <span className="text-emerald-700">within {s.breach}h</span> : <span className="text-rose-700">late</span>}</> : <>Elapsed: <b className="num">{fmtHours(s.hours)}</b> of {s.breach}h</>}</div>
+                <div className="mt-1 text-xs text-slate-500">Entered by {nameOf(l.entered_by)}</div>
+              </Card>
+              {mgr && (
+                <Card className="p-4">
+                  <h3 className="mb-2 text-sm font-semibold text-brand-800">Audit trail</h3>
+                  {!audit ? <p className="text-sm text-slate-500">Loading…</p> : !audit.length ? <p className="text-sm text-slate-500">No changes recorded.</p> : (
+                    <ul className="max-h-80 space-y-2 overflow-y-auto text-xs">
+                      {audit.map((a) => (
+                        <li key={a.id} className="border-b border-slate-100 pb-1.5">
+                          <div className="text-slate-500">{fmtDateTime(a.changed_at)} · {a.changed_by ? nameOf(a.changed_by) : 'System / verifier'} · {a.table_name === 'listing_channels' ? 'channel' : 'listing'}</div>
+                          {a.action === 'insert' ? <div className="text-slate-800">Created</div> : <div className="break-words text-slate-800"><b>{FIELD_LABEL[a.field_name] || a.field_name}</b>: <span className="text-rose-700 line-through">{a.old_value || '∅'}</span> → <span className="text-emerald-700">{a.new_value || '∅'}</span></div>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Card>
+              )}
+            </div>
+          </div>
+          {edit && <ListingForm listing={l} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
+          {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
+          {reason === 'reject' && <ReasonModal kind="danger" title="Reject listing" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
+        </div>
+      );
+    };
+
+    const ChannelRow = ({ c, canEdit }) => {
+      const { cfg, save } = useApp();
+      const [url, setUrl] = useState(c.url || '');
+      useEffect(() => setUrl(c.url || ''), [c.url]);
+      const verifierOwned = c.channel === 'website';
+      return (
+        <div className="rounded-lg border border-slate-200 p-2.5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-slate-800">{(cfg.portal_labels || {})[c.channel] || titleCase(c.channel)}</span>
+            {c.status === 'published' && <span className="text-xs text-emerald-700">✓ {fmtDate(c.published_at)}</span>}
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            <div className="col-span-2"><Select value={c.status} disabled={!canEdit} placeholder="Status" options={CHANNEL_STATUSES.map((s) => [s, titleCase(s)])} onChange={(v) => v && save('listing_channels', { status: v }, c.id)} /></div>
+            <input className={`${inputCls()} col-span-3`} placeholder="Listing URL" disabled={!canEdit} value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => { if ((url || '') !== (c.url || '')) save('listing_channels', { url: url || null }, c.id); }} />
+          </div>
+          {verifierOwned && <p className="mt-1 text-[11px] text-slate-500">The verifier sets this to Published automatically when it finds the File Ref on the site.</p>}
+        </div>
+      );
+    };
+
+    // ---------- Bulk CSV import (backlog): map -> dry-run preview -> commit
+    const IMPORT_FIELDS = ['reference_code', 'title', 'location', 'property_type', 'deal_type', 'area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished',
+      'media_images_count', 'media_videos_count', 'media_drive_link', 'is_exclusive', 'view_type', 'price', 'currency', 'facilities', 'selling_points', 'buyer_persona_nationality',
+      'buyer_persona_age_range', 'buyer_persona_gender', 'cover_photo_belongs', 'date_received', 'source_type', 'source_name', 'source_contact'];
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const CsvImport = ({ onClose }) => {
+      const { me, cfg, data, setData, reloadTable, toast } = useApp();
+      const [raw, setRaw] = useState(null); const [map, setMap] = useState({}); const [step, setStep] = useState('upload'); const [result, setResult] = useState(null); const [busy, setBusy] = useState(false);
+      const onFile = async (file) => {
+        const rows = parseCSV(await file.text());
+        if (rows.length < 2) { toast('The file has no data rows', 'error'); return; }
+        const headers = rows[0].map((h) => h.trim()); const m = {};
+        IMPORT_FIELDS.forEach((f) => { const i = headers.findIndex((h) => norm(h) === norm(f) || norm(h) === norm(FIELD_LABEL[f]) || (f === 'reference_code' && ['fileref', 'ref', 'refcode'].includes(norm(h)))); if (i >= 0) m[f] = i; });
+        setRaw({ headers, rows: rows.slice(1) }); setMap(m); setStep('map');
+      };
+      const matchKey = (obj, v) => Object.keys(obj || {}).find((k) => norm(k) === norm(v)) || null;
+      const parsed = useMemo(() => {
+        if (!raw) return [];
+        const existing = new Set(data.listings.map((l) => l.reference_code)); const seen = new Set();
+        return raw.rows.map((r, idx) => {
+          const get = (f) => map[f] == null ? '' : String(r[map[f]] == null ? '' : r[map[f]]).trim();
+          const o = {}; const errors = []; const warnings = [];
+          IMPORT_FIELDS.forEach((f) => {
+            const v = get(f); if (v === '') return;
+            if (NUM_FIELDS.includes(f)) { const n = Number(v.replace(/[, ]/g, '')); if (isNaN(n)) warnings.push(`${f} "${v}" is not a number — skipped`); else o[f] = n; }
+            else if (BOOL_FIELDS.includes(f)) o[f] = /^(y|yes|true|1)$/i.test(v) ? true : /^(n|no|false|0)$/i.test(v) ? false : null;
+            else if (f === 'facilities') o[f] = v.split(/[;|]/).map((x) => x.trim()).filter(Boolean);
+            else if (f === 'date_received') { const d = new Date(v); if (isNaN(d)) warnings.push(`date "${v}" not understood — using now`); else o[f] = d.toISOString(); }
+            else o[f] = v;
+          });
+          if (o.reference_code) o.reference_code = o.reference_code.toUpperCase().replace(/\s/g, '');
+          o.location = matchKey(cfg.location_codes, o.location) || o.location; o.property_type = matchKey(cfg.unit_type_codes, o.property_type) || o.property_type;
+          o.deal_type = /rent/i.test(o.deal_type || '') ? 'rent' : /sale|sell|buy/i.test(o.deal_type || '') ? 'sale' : o.reference_code && /-R$/.test(o.reference_code) ? 'rent' : o.reference_code && /-S$/.test(o.reference_code) ? 'sale' : null;
+          o.source_type = SOURCE_TYPES.find((s) => norm(s) === norm(o.source_type)) || 'other';
+          o.source_name = o.source_name || 'Backlog import';
+          if (o.currency) o.currency = o.currency.toUpperCase();
+          if (!o.location) errors.push('location missing'); else if (!o.reference_code && !(cfg.location_codes || {})[o.location]) errors.push(`no location code for "${o.location}"`);
+          if (!o.property_type) errors.push('property type missing'); else if (!o.reference_code && !(cfg.unit_type_codes || {})[o.property_type]) errors.push(`no unit type code for "${o.property_type}"`);
+          if (!o.deal_type) errors.push('sale/rent missing');
+          if (o.reference_code && (existing.has(o.reference_code) || seen.has(o.reference_code))) errors.push(`${o.reference_code} already exists`);
+          if (o.reference_code) seen.add(o.reference_code); else warnings.push('no File Ref — a new code will be generated (paste it into WordPress)');
+          return { line: idx + 2, o, errors, warnings, comp: calcCompleteness(o, cfg.required_fields).pct };
+        });
+      }, [raw, map, cfg, data.listings]);
+      const good = parsed.filter((p) => !p.errors.length);
+
+      const commit = async () => {
+        setBusy(true); const created = []; const failed = [];
+        for (let i = 0; i < good.length; i += 25) {
+          const chunk = good.slice(i, i + 25); const payload = chunk.map((p) => ({ ...p.o, entered_by: me.id, assigned_to: me.id }));
+          const { data: rows, error } = await sbc.from('listings').insert(payload).select();
+          if (!error) { created.push(...rows); continue; }
+          for (const p of chunk) {        // one bad row must not sink the batch
+            const { data: row, error: e2 } = await sbc.from('listings').insert({ ...p.o, entered_by: me.id, assigned_to: me.id }).select().single();
+            if (e2) failed.push({ line: p.line, error: friendlyError(e2) }); else created.push(row);
+          }
+        }
+        setData((d) => ({ ...d, listings: [...created, ...d.listings] }));
+        await reloadTable('listing_channels');
+        setBusy(false); setResult({ created: created.length, failed }); setStep('done');
+      };
+      const template = () => downloadCSV('hv-ops-import-template.csv', IMPORT_FIELDS, [['HD-A-1012-S', 'Sea view apartment in Hadaba', 'Hadaba', 'Apartment', 'sale', 85, 5, 3, 2, 1, 1, 'yes', 12, 1, 'https://drive.google.com/…', 'no', 'Sea view', 95000, 'EUR', 'Swimming pool; Elevator', 'Walk to the beach', 'German', '45-54', 'Couples', 'yes', '2026-09-01 10:00', 'owner', 'Owner name', '+20…']]);
+
+      return (
+        <Modal wide title="Import listings from CSV" onClose={onClose} footer={
+          step === 'map' ? <><Btn kind="ghost" onClick={() => setStep('upload')}>Back</Btn><Btn onClick={() => setStep('preview')}>Dry-run preview</Btn></> :
+          step === 'preview' ? <><Btn kind="ghost" onClick={() => setStep('map')}>Back</Btn><Btn disabled={!good.length || busy} onClick={commit}>{busy ? 'Importing…' : `Import ${good.length} listing${good.length === 1 ? '' : 's'}`}</Btn></> :
+          <Btn kind="ghost" onClick={onClose}>Close</Btn>}>
+          {step === 'upload' && (
+            <div className="space-y-3 text-sm text-slate-700">
+              <p>Use this for the existing backlog. Rows that already have a website <b>File Ref</b> keep it (the verifier will then confirm them as live). Rows without one get a new code that must be pasted into WordPress.</p>
+              <input type="file" accept=".csv,text/csv" className="block w-full text-sm" onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
+              <Btn kind="ghost" onClick={template}>Download template CSV</Btn>
+            </div>
+          )}
+          {step === 'map' && raw && (
+            <div>
+              <p className="mb-3 text-sm text-slate-600">{raw.rows.length} rows found. Match each HV Ops field to a column in your file.</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {IMPORT_FIELDS.map((f) => (
+                  <div key={f} className="flex items-center gap-2">
+                    <span className="w-44 shrink-0 text-xs text-slate-700">{f === 'reference_code' ? 'File Ref / reference code' : FIELD_LABEL[f] || f}</span>
+                    <Select value={map[f] == null ? null : String(map[f])} placeholder="— not in file —" options={raw.headers.map((h, i) => [String(i), h || `Column ${i + 1}`])} onChange={(v) => setMap((m) => { const n = { ...m }; if (v == null) delete n[f]; else n[f] = Number(v); return n; })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {step === 'preview' && (
+            <div>
+              <div className="mb-3 flex flex-wrap gap-2 text-sm"><Badge className="bg-emerald-100 text-emerald-800">{good.length} ready</Badge><Badge className="bg-rose-100 text-rose-800">{parsed.length - good.length} will be skipped</Badge><span className="text-slate-500">Nothing is saved until you press Import.</span></div>
+              <div className="scroll-x max-h-[50vh] overflow-y-auto rounded-lg border border-slate-200">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-left text-slate-500"><tr>{['Line', 'Ref', 'Location', 'Type', 'Deal', 'Price', 'Complete', 'Result'].map((h) => <th key={h} className="px-2 py-1.5">{h}</th>)}</tr></thead>
+                  <tbody>{parsed.map((p) => (
+                    <tr key={p.line} className={`border-t border-slate-100 ${p.errors.length ? 'bg-rose-50' : ''}`}>
+                      <td className="px-2 py-1.5">{p.line}</td><td className="px-2 py-1.5 font-mono">{p.o.reference_code || <i className="text-slate-400">new</i>}</td><td className="px-2 py-1.5">{p.o.location}</td><td className="px-2 py-1.5">{p.o.property_type}</td><td className="px-2 py-1.5">{p.o.deal_type}</td>
+                      <td className="px-2 py-1.5">{money(p.o.price, p.o.currency)}</td><td className="px-2 py-1.5">{p.comp}%</td>
+                      <td className="px-2 py-1.5">{p.errors.length ? <span className="text-rose-700">Skip: {p.errors.join('; ')}</span> : <span className="text-emerald-700">OK{p.warnings.length ? <span className="text-amber-700"> · {p.warnings.join('; ')}</span> : ''}</span>}</td>
+                    </tr>))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {step === 'done' && result && (
+            <div className="space-y-2 text-sm"><p className="font-medium text-emerald-700">{result.created} listings imported.</p>
+              {result.failed.length > 0 && <div className="text-rose-700">{result.failed.map((x) => <div key={x.line}>Line {x.line}: {x.error}</div>)}</div>}</div>
+          )}
+        </Modal>
+      );
+    };
+
+    // =========================================================================================
+    // TASKS — kanban on desktop, list on phone. Staff move To do -> Doing -> Review; a manager approves.
+    // =========================================================================================
+    const isOverdue = (t, now) => t.due_at && !['done', 'cancelled'].includes(t.status) && new Date(t.due_at).getTime() < now;
+
+    const TaskForm = ({ task, preset, onClose }) => {
+      const { me, data, cfg, save, toast } = useApp();
+      const [f, setF] = useState(task || { title: '', description: '', task_type: null, assigned_to: me.id, priority: 'normal', due_at: null, listing_id: null, agency: null, ...(preset || {}) });
+      const [busy, setBusy] = useState(false);
+      const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const submit = async () => {
+        if (!f.title.trim()) { toast('Title is required', 'error'); return; }
+        setBusy(true);
+        const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, priority: f.priority || 'normal', due_at: f.due_at, listing_id: f.listing_id, agency: f.agency };
+        if (!task) payload.created_by = me.id;
+        const row = await save('tasks', payload, task ? task.id : null);
+        setBusy(false); if (row) { toast('Task saved'); onClose(); }
+      };
+      return (
+        <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>Save</Btn></>}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Title" className="col-span-2" bad={!f.title.trim()}><input className={inputCls(!f.title.trim())} value={f.title} onChange={(e) => set('title', e.target.value)} autoFocus /></Field>
+            <Field label="Description" className="col-span-2"><textarea rows={3} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
+            <Field label="Assignee"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
+            <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
+            <Field label="Due"><input type="datetime-local" className={inputCls()} value={toLocalInput(f.due_at)} onChange={(e) => set('due_at', fromLocalInput(e.target.value))} /></Field>
+            <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
+            <Field label="Linked listing (optional)"><Select value={f.listing_id} onChange={(v) => set('listing_id', v)} placeholder="None" options={data.listings.filter((l) => l.status !== 'archived').slice(0, 500).map((l) => [l.id, `${l.reference_code}${l.title ? ' · ' + l.title.slice(0, 30) : ''}`])} /></Field>
+            <Field label="Agency (optional)"><Select value={f.agency} onChange={(v) => set('agency', v)} placeholder="None" options={data.agencies.map((a) => [a.name, a.display_name])} /></Field>
+          </div>
+        </Modal>
+      );
+    };
+
+    const TaskCard = ({ t, onOpen, draggable }) => {
+      const { now, nameOf, data } = useApp();
+      const over = isOverdue(t, now); const l = t.listing_id && data.listings.find((x) => x.id === t.listing_id);
+      return (
+        <div draggable={draggable} onDragStart={(e) => e.dataTransfer.setData('text/plain', t.id)} onClick={() => onOpen(t)}
+          className={`cursor-pointer rounded-lg border bg-white p-2.5 shadow-sm hover:border-brand-500 ${over ? 'border-rose-400' : 'border-slate-200'}`}>
+          <div className="text-sm font-medium text-slate-900">{t.title}</div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <Badge className={PRIORITY[t.priority]}>{titleCase(t.priority)}</Badge>
+            {t.task_type && <Badge>{titleCase(t.task_type)}</Badge>}
+            {l && <Badge className="bg-brand-50 font-mono text-brand-800">{l.reference_code}</Badge>}
+            {t.agency && <Badge className="bg-violet-100 text-violet-800">{titleCase(t.agency)}</Badge>}
+            {t.recurring_template_id && <Badge>↻</Badge>}
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-xs"><span className="text-slate-500">{nameOf(t.assigned_to)}</span><span className={over ? 'font-semibold text-rose-700' : 'text-slate-500'}>{t.due_at ? `${over ? 'Overdue · ' : ''}${fmtDateTime(t.due_at)}` : 'No due date'}</span></div>
+          {t.rejection_reason && t.status !== 'done' && <div className="mt-1.5 rounded bg-amber-50 p-1.5 text-xs text-amber-900">Sent back: {t.rejection_reason}</div>}
+        </div>
+      );
+    };
+
+    const TaskDetail = ({ t, onClose }) => {
+      const { me, save, nameOf, go, data, toast } = useApp();
+      const [edit, setEdit] = useState(false); const [back, setBack] = useState(false);
+      const mgr = isMgr(me); const mine = t.assigned_to === me.id || t.created_by === me.id;
+      const move = async (status, extra = {}) => { const row = await save('tasks', { status, ...extra }, t.id); if (row) { toast(`Moved to ${titleCase(status)}`); onClose(); } };
+      const l = t.listing_id && data.listings.find((x) => x.id === t.listing_id);
+      if (edit) return <TaskForm task={t} onClose={onClose} />;
+      if (back) return <ReasonModal title="Send back" label="What needs to change? (mandatory)" confirmLabel="Send back to Doing" kind="danger" onClose={() => setBack(false)} onConfirm={(r) => move('doing', { rejection_reason: r })} />;
+      return (
+        <Modal title={t.title} onClose={onClose} footer={<>
+          {(mgr || mine) && t.status !== 'done' && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit</Btn>}
+          {(mgr || mine) && t.status === 'todo' && <Btn onClick={() => move('doing')}>Start</Btn>}
+          {(mgr || mine) && t.status === 'doing' && <Btn onClick={() => move('review')}>Submit for review</Btn>}
+          {(mgr || mine) && t.status === 'doing' && <Btn kind="ghost" onClick={() => move('todo')}>Back to To do</Btn>}
+          {mgr && t.status === 'review' && <><Btn kind="danger" onClick={() => setBack(true)}>Send back</Btn><Btn kind="ok" onClick={() => move('done')}>Approve</Btn></>}
+          {mgr && !['done', 'cancelled'].includes(t.status) && <Btn kind="ghost" onClick={() => { if (confirm('Cancel this task?')) move('cancelled'); }}>Cancel task</Btn>}
+          {!mgr && t.status === 'review' && <span className="self-center text-sm text-slate-500">Waiting for manager approval</span>}</>}>
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap gap-1.5"><Badge className="bg-brand-50 text-brand-800">{titleCase(t.status)}</Badge><Badge className={PRIORITY[t.priority]}>{titleCase(t.priority)}</Badge>{t.task_type && <Badge>{titleCase(t.task_type)}</Badge>}</div>
+            {t.description && <p className="whitespace-pre-wrap text-slate-700">{t.description}</p>}
+            {t.rejection_reason && <div className="rounded bg-amber-50 p-2 text-amber-900">Last sent back: {t.rejection_reason}</div>}
+            <dl className="grid grid-cols-2 gap-2">
+              {[['Assignee', nameOf(t.assigned_to)], ['Created by', nameOf(t.created_by)], ['Due', fmtDateTime(t.due_at)], ['Started', fmtDateTime(t.started_at)], ['Submitted', fmtDateTime(t.completed_at)], ['Approved', t.approved_at ? `${fmtDateTime(t.approved_at)} · ${nameOf(t.approved_by)}` : '—']].map(([k, v]) => <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>)}
+            </dl>
+            {l && <button className="text-brand-700 underline" onClick={() => { onClose(); go('listing', l.id); }}>Open listing {l.reference_code}</button>}
+          </div>
+        </Modal>
+      );
+    };
+
+    const TemplatesModal = ({ onClose }) => {
+      const { me, data, cfg, save, toast, workerCall } = useApp();
+      const blank = { title: '', description: '', task_type: null, assigned_to: null, priority: 'normal', frequency: 'daily', weekday: 0, day_of_month: 1, due_time: '17:00', is_active: true };
+      const [f, setF] = useState(null);
+      const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const submit = async () => {
+        if (!f.title.trim() || !f.assigned_to) { toast('Title and assignee are required', 'error'); return; }
+        const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, priority: f.priority, frequency: f.frequency,
+          weekday: f.frequency === 'weekly' ? Number(f.weekday) : null, day_of_month: f.frequency === 'monthly' ? Number(f.day_of_month) : null, due_time: f.due_time, is_active: f.is_active };
+        if (!f.id) payload.created_by = me.id;
+        if (await save('recurring_templates', payload, f.id)) setF(null);
+      };
+      return (
+        <Modal wide title="Recurring task templates" onClose={onClose} footer={f ? <><Btn kind="ghost" onClick={() => setF(null)}>Back</Btn><Btn onClick={submit}>Save template</Btn></> :
+          <><Btn kind="ghost" onClick={async () => { const r = await workerCall('/run-recurring'); if (r) toast(`${r.tasks_created} task(s) created for ${r.date}`); }}>Generate today’s now</Btn><Btn onClick={() => setF(blank)}>New template</Btn></>}>
+          {!f ? (
+            <div className="space-y-2">
+              <p className="text-sm text-slate-500">Every night just after midnight (Cairo) the worker creates that day’s tasks from the active templates.</p>
+              {!data.recurring_templates.length && <Empty>No templates yet.</Empty>}
+              {data.recurring_templates.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5">
+                  <button className="min-w-0 text-left" onClick={() => setF({ ...t, due_time: (t.due_time || '17:00').slice(0, 5) })}>
+                    <div className={`truncate text-sm font-medium ${t.is_active ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{t.title}</div>
+                    <div className="text-xs text-slate-500">{titleCase(t.frequency)}{t.frequency === 'weekly' ? ` · ${days[t.weekday]}` : t.frequency === 'monthly' ? ` · day ${t.day_of_month}` : ''} · due {(t.due_time || '').slice(0, 5)} · {(data.profiles.find((p) => p.id === t.assigned_to) || {}).full_name || '—'}</div>
+                  </button>
+                  <Btn kind="ghost" className="!py-1" onClick={() => save('recurring_templates', { is_active: !t.is_active }, t.id)}>{t.is_active ? 'Pause' : 'Resume'}</Btn>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Title" className="col-span-2" bad={!f.title.trim()}><input className={inputCls(!f.title.trim())} value={f.title} onChange={(e) => set('title', e.target.value)} /></Field>
+              <Field label="Description" className="col-span-2"><textarea rows={2} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
+              <Field label="Assignee" bad={!f.assigned_to}><Select bad={!f.assigned_to} value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
+              <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
+              <Field label="Repeats"><Select value={f.frequency} onChange={(v) => set('frequency', v || 'daily')} options={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly']]} /></Field>
+              {f.frequency === 'weekly' && <Field label="Weekday"><Select value={String(f.weekday == null ? 0 : f.weekday)} onChange={(v) => set('weekday', Number(v || 0))} options={days.map((d, i) => [String(i), d])} /></Field>}
+              {f.frequency === 'monthly' && <Field label="Day of month"><input type="number" min="1" max="31" className={inputCls()} value={f.day_of_month || 1} onChange={(e) => set('day_of_month', e.target.value)} /></Field>}
+              <Field label="Due time (Cairo)"><input type="time" className={inputCls()} value={f.due_time} onChange={(e) => set('due_time', e.target.value)} /></Field>
+              <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
+            </div>
+          )}
+        </Modal>
+      );
+    };
+
+    const TasksPage = () => {
+      const { me, data, now, save, toast } = useApp();
+      const mgr = isMgr(me);
+      const [who, setWho] = useState(mgr ? null : me.id); const [form, setForm] = useState(false); const [open, setOpen] = useState(null); const [tpl, setTpl] = useState(false); const [col, setCol] = useState('todo');
+      const tasks = data.tasks.filter((t) => t.status !== 'cancelled' && (!who || t.assigned_to === who));
+      const recentDone = (t) => t.status !== 'done' || now - new Date(t.approved_at || t.updated_at).getTime() < 14 * 864e5;
+      const byCol = (k) => tasks.filter((t) => t.status === k && recentDone(t)).sort((a, b) => (new Date(a.due_at || '2999') - new Date(b.due_at || '2999')));
+      const openTask = open && data.tasks.find((t) => t.id === open);
+      const drop = async (e, status) => {
+        e.preventDefault(); const t = data.tasks.find((x) => x.id === e.dataTransfer.getData('text/plain'));
+        if (!t || t.status === status) return;
+        if (!mgr && (status === 'done' || t.status === 'done')) { toast('Only a manager can approve tasks', 'error'); return; }
+        if (t.status === 'review' && ['todo', 'doing'].includes(status)) { setOpen(t.id); toast('Open the task and use “Send back” — a reason is required', 'error'); return; }
+        await save('tasks', { status }, t.id);
+      };
+      return (
+        <div>
+          <PageHeader title="Tasks" sub={`${tasks.filter((t) => isOverdue(t, now)).length} overdue · ${tasks.filter((t) => t.status === 'review').length} waiting approval`}>
+            <div className="w-44"><Select value={who} onChange={setWho} placeholder="Everyone" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.id === me.id ? 'My tasks' : p.full_name || p.email])} /></div>
+            {mgr && <Btn kind="ghost" onClick={() => setTpl(true)}>↻ Recurring</Btn>}
+            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New task</Btn>
+          </PageHeader>
+          {/* phone: one column at a time */}
+          <div className="md:hidden">
+            <Tabs value={col} onChange={setCol} tabs={TASK_COLS.map(([k, l]) => [k, `${l} (${byCol(k).length})`])} />
+            <div className="space-y-2">{byCol(col).length ? byCol(col).map((t) => <TaskCard key={t.id} t={t} onOpen={(x) => setOpen(x.id)} />) : <Empty>Nothing here.</Empty>}</div>
+          </div>
+          {/* desktop: kanban with drag and drop */}
+          <div className="hidden grid-cols-4 gap-3 md:grid">
+            {TASK_COLS.map(([k, label]) => (
+              <div key={k} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, k)} className="min-h-[60vh] rounded-xl bg-slate-100 p-2">
+                <div className="mb-2 flex items-center justify-between px-1 text-sm font-semibold text-slate-700"><span>{label}</span><span className="num text-slate-400">{byCol(k).length}</span></div>
+                <div className="space-y-2">{byCol(k).map((t) => <TaskCard key={t.id} t={t} draggable onOpen={(x) => setOpen(x.id)} />)}</div>
+              </div>
+            ))}
+          </div>
+          {form && <TaskForm onClose={() => setForm(false)} />}
+          {openTask && <TaskDetail t={openTask} onClose={() => setOpen(null)} />}
+          {tpl && <TemplatesModal onClose={() => setTpl(false)} />}
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // AGENCIES — no agency logins; our staff log their deliverables and numbers
+    // =========================================================================================
+    const DeliverableForm = ({ agency, month, item, onClose }) => {
+      const { me, cfg, save, toast } = useApp();
+      const mgr = isMgr(me);
+      const [f, setF] = useState(item || { item_type: null, planned_qty: 1, delivered_qty: 0, due_date: '', status: 'planned', revisions_count: 0, proof_url: '', notes: '' });
+      const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const statuses = Object.keys(DELIV_STATUS).filter((s) => mgr || s !== 'approved' || f.status === 'approved');
+      const submit = async () => {
+        if (!f.item_type) { toast('Choose an item type', 'error'); return; }
+        const payload = { item_type: f.item_type, planned_qty: Number(f.planned_qty) || 0, delivered_qty: Number(f.delivered_qty) || 0, due_date: f.due_date || null, status: f.status,
+          revisions_count: Number(f.revisions_count) || 0, proof_url: f.proof_url || null, notes: f.notes || null };
+        if (!item) Object.assign(payload, { agency_id: agency.id, period_month: month, logged_by: me.id });
+        if (await save('agency_deliverables', payload, item ? item.id : null)) onClose();
+      };
+      return (
+        <Modal title={`${item ? 'Update' : 'Add'} deliverable — ${agency.display_name}`} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit}>Save</Btn></>}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Item type" bad={!f.item_type}><Select bad={!f.item_type} value={f.item_type} onChange={(v) => set('item_type', v)} options={(cfg.deliverable_item_types || []).map((t) => [t, titleCase(t)])} /></Field>
+            <Field label="Due date"><input type="date" className={inputCls()} value={f.due_date || ''} onChange={(e) => set('due_date', e.target.value)} /></Field>
+            <Field label="Planned qty"><input type="number" min="0" className={inputCls()} value={f.planned_qty} onChange={(e) => set('planned_qty', e.target.value)} /></Field>
+            <Field label="Delivered qty"><input type="number" min="0" className={inputCls()} value={f.delivered_qty} onChange={(e) => set('delivered_qty', e.target.value)} /></Field>
+            <Field label="Status"><Select value={f.status} onChange={(v) => set('status', v || 'planned')} options={statuses.map((s) => [s, titleCase(s)])} /></Field>
+            <Field label="Revisions"><input type="number" min="0" className={inputCls()} value={f.revisions_count} onChange={(e) => set('revisions_count', e.target.value)} /></Field>
+            <Field label="Proof link" className="col-span-2"><input className={inputCls()} value={f.proof_url || ''} onChange={(e) => set('proof_url', e.target.value)} placeholder="https://…" /></Field>
+            <Field label="Notes" className="col-span-2"><textarea rows={2} className={inputCls()} value={f.notes || ''} onChange={(e) => set('notes', e.target.value)} /></Field>
+          </div>
+        </Modal>
+      );
+    };
+
+    const MetricsPanel = ({ agency, month, canWrite }) => {
+      const { me, data, cfg, setData, toast } = useApp();
+      const defs = (cfg.metric_defs || {})[agency.name] || [];
+      const existing = data.agency_metrics.filter((m) => m.agency_id === agency.id && m.period_month === month);
+      const [vals, setVals] = useState({}); const [busy, setBusy] = useState(false);
+      useEffect(() => setVals(Object.fromEntries(existing.map((m) => [m.metric_key, m.metric_value == null ? '' : String(m.metric_value)]))), [agency.id, month, existing.length]);
+      const saveAll = async () => {
+        setBusy(true);
+        const rows = defs.filter((d) => vals[d.key] !== undefined && vals[d.key] !== '').map((d) => ({ agency_id: agency.id, period_month: month, metric_key: d.key, metric_value: Number(vals[d.key]), unit: d.unit, entered_by: me.id, source: 'manual' }));
+        const { data: saved, error } = await sbc.from('agency_metrics').upsert(rows, { onConflict: 'agency_id,period_month,metric_key' }).select();
+        setBusy(false);
+        if (error) { toast(friendlyError(error), 'error'); return; }
+        setData((d) => ({ ...d, agency_metrics: [...d.agency_metrics.filter((m) => !saved.some((s) => s.id === m.id)), ...saved] }));
+        toast('Metrics saved');
+      };
+      return (
+        <Card className="p-4">
+          <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold text-brand-800">Performance numbers — {monthLabel(month)}</h3>{canWrite && <Btn className="no-print !py-1.5" onClick={saveAll} disabled={busy}>Save numbers</Btn>}</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {defs.map((d) => <Field key={d.key} label={`${d.label}${d.unit === '%' ? ' (%)' : d.unit === 'currency' ? ` (${agency.currency || 'as billed'})` : ''}`}>
+              <input type="number" step="any" disabled={!canWrite} className={inputCls()} value={vals[d.key] == null ? '' : vals[d.key]} onChange={(e) => setVals((p) => ({ ...p, [d.key]: e.target.value }))} /></Field>)}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Entered by hand for now. Amounts stay in the currency they were billed in — nothing is converted.</p>
+        </Card>
+      );
+    };
+
+    const AgenciesPage = () => {
+      const { me, data, save } = useApp();
+      const agencies = data.agencies.filter((a) => a.is_active);
+      const [aid, setAid] = useState(agencies[0] && agencies[0].id); const [month, setMonth] = useState(monthStart()); const [form, setForm] = useState(null);
+      const agency = agencies.find((a) => a.id === aid) || agencies[0];
+      if (!agency) return <Empty>No agencies yet. Run sql/002_seed_settings.sql.</Empty>;
+      const canWrite = ['admin', 'manager', 'marketing'].includes(me.role); const mgr = isMgr(me);
+      const items = data.agency_deliverables.filter((d) => d.agency_id === agency.id && d.period_month === month).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+      const trend = [0, -1, -2, -3].map((n) => agencyScorecard(agency, addMonths(month, n), data));
+      const sc = trend[0]; const delta = (k) => sc[k] != null && trend[1][k] != null ? r1(sc[k] - trend[1][k]) : null;
+      const copyLast = async () => {
+        const prev = data.agency_deliverables.filter((d) => d.agency_id === agency.id && d.period_month === addMonths(month, -1));
+        for (const p of prev) {
+          const due = p.due_date ? ymd(new Date(new Date(p.due_date).getFullYear(), new Date(p.due_date).getMonth() + 1, new Date(p.due_date).getDate())) : null;
+          await save('agency_deliverables', { agency_id: agency.id, period_month: month, item_type: p.item_type, planned_qty: p.planned_qty, due_date: due, logged_by: me.id });
+        }
+      };
+      return (
+        <div>
+          <PageHeader title="Agencies" sub="Contract scorecards — the renewal document"><MonthPicker value={month} onChange={setMonth} /><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print</Btn></PageHeader>
+          <Tabs value={agency.id} onChange={setAid} tabs={agencies.map((a) => [a.id, a.display_name])} />
+          <div className="space-y-4">
+            <Card className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div><h2 className="text-lg font-bold text-slate-900">{agency.display_name}</h2><p className="text-sm text-slate-600">{agency.scope_notes || '—'}</p></div>
+                <div className="text-right text-sm"><div className="num text-lg font-semibold">{agency.monthly_fee != null ? `${money(agency.monthly_fee, agency.currency)} / month` : 'Fee not set'}</div><div className="text-slate-500">{agency.contract_start ? `${fmtDate(agency.contract_start)} → ${fmtDate(agency.contract_end)}` : 'Contract period not set'}</div></div>
+              </div>
+              <div className="mt-2 text-sm text-slate-600">Contact: {agency.contact_person || '—'}{agency.contact_email ? ` · ${agency.contact_email}` : ''}{agency.contact_phone ? ` · ${agency.contact_phone}` : ''}</div>
+              {me.role === 'admin' && <p className="no-print mt-1 text-xs text-slate-400">Edit the contract in Settings → Agencies.</p>}
+            </Card>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Tile label={`Delivery rate${delta('delivery_rate') != null ? ` (${delta('delivery_rate') >= 0 ? '+' : ''}${delta('delivery_rate')} vs prev)` : ''}`} value={sc.delivery_rate == null ? null : `${sc.delivery_rate}%`} />
+              <Tile label="On-time delivery" value={sc.on_time_pct == null ? null : `${sc.on_time_pct}%`} />
+              <Tile label="Revision rate" value={sc.revision_rate == null ? null : `${sc.revision_rate}%`} />
+              <Tile label={`Cost per lead (${sc.cpl_basis})`} value={sc.cpl == null ? null : money(sc.cpl, sc.currency)} />
+            </div>
+
+            <Card className="p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-brand-800">Deliverables — {monthLabel(month)} · {sc.delivered}/{sc.planned} delivered</h3>
+                {canWrite && <div className="no-print flex gap-2">{!items.length && <Btn kind="ghost" className="!py-1.5" onClick={copyLast}>Copy plan from last month</Btn>}<Btn className="!py-1.5" onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add</Btn></div>}
+              </div>
+              {!items.length ? <Empty>No deliverables planned for this month yet.</Empty> : (
+                <div className="scroll-x"><table className="w-full text-sm">
+                  <thead className="text-left text-xs text-slate-500"><tr>{['Item', 'Planned', 'Delivered', 'Due', 'Status', 'Revisions', 'Proof', ''].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                  <tbody>{items.map((d) => (
+                    <tr key={d.id} className="border-t border-slate-100">
+                      <td className="px-2 py-2 font-medium">{titleCase(d.item_type)}{d.notes && <div className="text-xs font-normal text-slate-500">{d.notes}</div>}</td>
+                      <td className="num px-2 py-2">{d.planned_qty}</td>
+                      <td className="num px-2 py-2"><span className={d.delivered_qty < d.planned_qty ? 'text-rose-700' : 'text-emerald-700'}>{d.delivered_qty}</span></td>
+                      <td className="whitespace-nowrap px-2 py-2">{fmtDate(d.due_date)}</td>
+                      <td className="px-2 py-2"><Badge className={DELIV_STATUS[d.status]}>{titleCase(d.status)}</Badge></td>
+                      <td className="num px-2 py-2">{d.revisions_count}</td>
+                      <td className="px-2 py-2">{d.proof_url ? <a className="text-brand-700 underline" href={d.proof_url} target="_blank" rel="noreferrer">Open</a> : '—'}</td>
+                      <td className="no-print whitespace-nowrap px-2 py-2 text-right">
+                        {mgr && d.status === 'submitted' && <><Btn kind="ok" className="mr-1 !px-2 !py-1" onClick={() => save('agency_deliverables', { status: 'approved' }, d.id)}>Approve</Btn><Btn kind="danger" className="mr-1 !px-2 !py-1" onClick={() => save('agency_deliverables', { status: 'revision_requested', revisions_count: d.revisions_count + 1 }, d.id)}>Revise</Btn></>}
+                        {canWrite && <Btn kind="ghost" className="!px-2 !py-1" onClick={() => setForm(d)}>Update</Btn>}
+                      </td>
+                    </tr>))}</tbody>
+                </table></div>
+              )}
+            </Card>
+
+            <MetricsPanel agency={agency} month={month} canWrite={canWrite} />
+
+            <Card className="p-4">
+              <h3 className="mb-3 text-sm font-semibold text-brand-800">Monthly scorecard — trend</h3>
+              <div className="scroll-x"><table className="w-full text-sm">
+                <thead className="text-left text-xs text-slate-500"><tr>{['Month', 'Planned', 'Delivered', 'Delivery rate', 'On time', 'Revision rate', 'Leads', 'Cost / lead'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                <tbody>{trend.map((t, i) => (
+                  <tr key={t.month} className={`border-t border-slate-100 ${i === 0 ? 'font-semibold' : ''}`}>
+                    <td className="px-2 py-2">{monthLabel(t.month)}</td><td className="num px-2 py-2">{t.planned}</td><td className="num px-2 py-2">{t.delivered}</td>
+                    <td className="num px-2 py-2">{show(t.delivery_rate, '%')}</td><td className="num px-2 py-2">{show(t.on_time_pct, '%')}</td><td className="num px-2 py-2">{show(t.revision_rate, '%')}</td>
+                    <td className="num px-2 py-2">{show(t.leads)}</td><td className="num px-2 py-2">{t.cpl == null ? '—' : money(t.cpl, t.currency)}</td>
+                  </tr>))}</tbody>
+              </table></div>
+            </Card>
+          </div>
+          {form && <DeliverableForm agency={agency} month={month} item={form.id ? form : null} onClose={() => setForm(null)} />}
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // KPIs — per-person cards, leaderboard, monthly targets
+    // =========================================================================================
+    const kpiDefsFor = (cfg, role) => (cfg.user_kpi_defs || []).filter((d) => role === 'manager' || role === 'admin' ? true : d.team === role);
+    const targetOf = (data, userId, month, key) => { const t = data.kpi_targets.find((x) => x.subject_type === 'user' && x.subject_id === userId && x.period_month === month && x.metric_key === key); return t ? Number(t.target_value) : null; };
+    const unitOf = (d) => d.unit === '%' ? '%' : d.unit === 'h' ? 'h' : '';
+
+    const TargetsModal = ({ user, month, onClose }) => {
+      const { me, data, cfg, setData, toast } = useApp();
+      const defs = kpiDefsFor(cfg, user.role);
+      const [vals, setVals] = useState(() => Object.fromEntries(defs.map((d) => { const t = targetOf(data, user.id, month, d.key); return [d.key, t == null ? '' : String(t)]; })));
+      const submit = async () => {
+        const rows = defs.filter((d) => vals[d.key] !== '').map((d) => ({ subject_type: 'user', subject_id: user.id, period_month: month, metric_key: d.key, target_value: Number(vals[d.key]), created_by: me.id }));
+        if (!rows.length) { onClose(); return; }
+        const { data: saved, error } = await sbc.from('kpi_targets').upsert(rows, { onConflict: 'subject_type,subject_id,period_month,metric_key' }).select();
+        if (error) { toast(friendlyError(error), 'error'); return; }
+        setData((d) => ({ ...d, kpi_targets: [...d.kpi_targets.filter((t) => !saved.some((s) => s.id === t.id)), ...saved] }));
+        toast('Targets saved'); onClose();
+      };
+      return (
+        <Modal title={`Targets — ${user.full_name || user.email} — ${monthLabel(month)}`} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit}>Save targets</Btn></>}>
+          <div className="grid grid-cols-2 gap-3">{defs.map((d) => <Field key={d.key} label={`${d.label} ${d.better === 'low' ? '(max)' : '(min)'}`}><input type="number" step="any" className={inputCls()} value={vals[d.key]} onChange={(e) => setVals((p) => ({ ...p, [d.key]: e.target.value }))} /></Field>)}</div>
+        </Modal>
+      );
+    };
+
+    const KpisPage = () => {
+      const { me, data, cfg, now } = useApp();
+      const mgr = isMgr(me);
+      const [month, setMonth] = useState(monthStart()); const [target, setTarget] = useState(null);
+      const range = monthRange(month);
+      const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role) && (mgr || p.id === me.id));
+      const rows = useMemo(() => people.map((p) => ({ p, k: userKpis(p, range, data, cfg.sla_hours, now) })), [month, data, now]);
+      const board = (role, sortKey, cols) => {
+        const rs = rows.filter((r) => r.p.role === role).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
+        if (!rs.length) return null;
+        return (
+          <Card className="scroll-x p-4">
+            <h3 className="mb-3 text-sm font-semibold text-brand-800">{ROLE_LABEL[role]} leaderboard</h3>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500"><tr><th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Name</th>{cols.map((c) => <th key={c.key} className="px-2 py-1.5 text-right font-medium">{c.label}</th>)}</tr></thead>
+              <tbody>{rs.map((r, i) => (
+                <tr key={r.p.id} className="border-t border-slate-100"><td className="px-2 py-2 text-slate-400">{i + 1}</td><td className="whitespace-nowrap px-2 py-2 font-medium">{r.k.name}</td>
+                  {cols.map((c) => { const t = targetOf(data, r.p.id, month, c.key), v = r.k[c.key]; const ok = t == null || v == null ? null : c.better === 'low' ? v <= t : v >= t;
+                    return <td key={c.key} className={`num px-2 py-2 text-right ${ok == null ? '' : ok ? 'text-emerald-700' : 'text-rose-700'}`}>{show(v, unitOf(c))}{t != null && <span className="text-xs text-slate-400"> / {show(t)}</span>}</td>; })}
+                </tr>))}</tbody>
+            </table>
+          </Card>
+        );
+      };
+      const defs = cfg.user_kpi_defs || [];
+      return (
+        <div>
+          <PageHeader title="KPIs" sub="Value / target. Green = target met."><MonthPicker value={month} onChange={setMonth} /></PageHeader>
+          <div className="space-y-4">
+            {mgr && board('data_entry', 'listings_entered', defs.filter((d) => d.team === 'data_entry'))}
+            {mgr && board('marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
+            {rows.map(({ p, k }) => (
+              <Card key={p.id} className="p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div><h3 className="font-semibold text-slate-900">{k.name}</h3><p className="text-xs text-slate-500">{ROLE_LABEL[p.role]} · {monthLabel(month)}</p></div>
+                  {mgr && <Btn kind="ghost" className="no-print !py-1.5" onClick={() => setTarget(p)}>Set targets</Btn>}
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {kpiDefsFor(cfg, p.role).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={k[d.key]} target={targetOf(data, p.id, month, d.key)} better={d.better} />)}
+                </div>
+              </Card>
+            ))}
+            {!rows.length && <Empty>No data entry or marketing users yet.</Empty>}
+          </div>
+          {target && <TargetsModal user={target} month={month} onClose={() => setTarget(null)} />}
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // DASHBOARD (role-aware)
+    // =========================================================================================
+    const ListingLine = ({ l, note }) => {
+      const { go } = useApp();
+      return (
+        <button onClick={() => go('listing', l.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0 hover:bg-slate-50">
+          <div className="min-w-0"><div className="font-mono text-sm font-semibold text-slate-900">{l.reference_code}</div><div className="truncate text-xs text-slate-500">{note || l.title || `${l.property_type} · ${l.location}`}</div></div>
+          <SlaChip listing={l} />
+        </button>
+      );
+    };
+    const Section = ({ title, count, tone, children, action }) => (
+      <Card className={`p-4 ${tone === 'red' && count ? 'border-rose-300' : ''}`}>
+        <div className="mb-2 flex items-center justify-between"><h3 className={`text-sm font-semibold ${tone === 'red' && count ? 'text-rose-700' : 'text-brand-800'}`}>{title}{count != null && <span className={`num ml-2 rounded-full px-2 py-0.5 text-xs ${tone === 'red' && count ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{count}</span>}</h3>{action}</div>
+        {children}
+      </Card>
+    );
+    const limitList = (arr, render, empty) => !arr.length ? <p className="text-sm text-slate-400">{empty}</p> : <>{arr.slice(0, 6).map(render)}{arr.length > 6 && <p className="pt-1 text-xs text-slate-400">+ {arr.length - 6} more</p>}</>;
+
+    const Dashboard = () => {
+      const { me, data, cfg, now, go, nameOf } = useApp();
+      const mgr = isMgr(me); const month = monthStart(); const sla = cfg.sla_hours;
+      const open = data.listings.filter((l) => !['archived', 'rejected', 'verified_live'].includes(l.status));
+      const mineL = open.filter((l) => l.entered_by === me.id || l.assigned_to === me.id);
+      const withSla = (arr) => arr.map((l) => ({ l, s: slaOf(l, sla, now) })).sort((a, b) => a.s.remaining - b.s.remaining);
+      const myTasks = data.tasks.filter((t) => t.assigned_to === me.id && !['done', 'cancelled'].includes(t.status));
+      const dueToday = myTasks.filter((t) => t.due_at && new Date(t.due_at) < addDays(startOfDay(), 1));
+      const myKpi = useMemo(() => userKpis(me, monthRange(month), data, sla, now), [data, now]);
+      const taskLine = (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className={`whitespace-nowrap text-xs ${isOverdue(t, now) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{t.due_at ? fmtDateTime(t.due_at) : ''}</span></button>;
+      const kpiTiles = (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {kpiDefsFor(cfg, me.role).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
+        </div>
+      );
+
+      if (!mgr) {
+        const incomplete = mineL.filter((l) => l.completeness_pct < 100);
+        const weekEnd = ymd(addDays(new Date(), 7));
+        const delivs = data.agency_deliverables.filter((d) => d.due_date && d.due_date <= weekEnd && d.delivered_qty < d.planned_qty && !['approved', 'missed'].includes(d.status));
+        const needMedia = open.filter((l) => !(l.media_images_count > 0));
+        return (
+          <div>
+            <PageHeader title={`Hello, ${(me.full_name || '').split(' ')[0] || 'there'}`} sub={`${monthLabel(month)} · month to date`} />
+            <div className="space-y-4">
+              {kpiTiles}
+              <div className="grid gap-4 lg:grid-cols-2">
+                {me.role === 'data_entry' && <Section title="My SLA clocks" count={mineL.length}>{limitList(withSla(mineL), ({ l }) => <ListingLine key={l.id} l={l} />, 'Nothing in progress.')}</Section>}
+                {me.role === 'data_entry' && <Section title="My incomplete listings" count={incomplete.length} tone="red">{limitList(incomplete, (l) => <ListingLine key={l.id} l={l} note={`Missing: ${(l.missing_fields || []).map((m) => FIELD_LABEL[m] || m).join(', ')}`} />, 'All complete.')}</Section>}
+                <Section title="My tasks due today / overdue" count={dueToday.length} tone="red">{limitList(dueToday, taskLine, 'Nothing due today.')}</Section>
+                {me.role === 'marketing' && <Section title="My open tasks" count={myTasks.length}>{limitList(myTasks, taskLine, 'No open tasks.')}</Section>}
+                {me.role === 'marketing' && <Section title="Agency deliverables due this week" count={delivs.length} action={<button className="text-xs text-brand-700" onClick={() => go('agencies')}>Open</button>}>{limitList(delivs, (d) => <div key={d.id} className="flex justify-between border-t border-slate-100 py-2 text-sm first:border-t-0"><span>{(data.agencies.find((a) => a.id === d.agency_id) || {}).display_name} · {titleCase(d.item_type)} ({d.delivered_qty}/{d.planned_qty})</span><span className={`text-xs ${d.due_date < ymd(new Date()) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{fmtDate(d.due_date)}</span></div>, 'Nothing due this week.')}</Section>}
+                {me.role === 'marketing' && <Section title="Listings waiting on media" count={needMedia.length}>{limitList(withSla(needMedia), ({ l }) => <ListingLine key={l.id} l={l} note={`${l.property_type} · ${l.location} · no images yet`} />, 'No listing is waiting on media.')}</Section>}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ---- manager / admin: red items first
+      const all = withSla(open);
+      const breached = all.filter((x) => x.s.state === 'red' && !x.s.onHold);
+      const cnf = all.filter((x) => x.s.claimedNotFound);
+      const atRisk = all.filter((x) => x.s.state === 'yellow' && !x.s.onHold);
+      const stale = open.filter((l) => l.completeness_pct < 100 && now - new Date(l.created_at).getTime() > Number((sla && sla.incomplete_alert) || 24) * 36e5);
+      const review = data.tasks.filter((t) => t.status === 'review'); const submitted = data.agency_deliverables.filter((d) => d.status === 'submitted');
+      const overdue = data.tasks.filter((t) => isOverdue(t, now));
+      const team = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role)).map((p) => userKpis(p, monthRange(month), data, sla, now));
+      const months6 = [-5, -4, -3, -2, -1, 0].map((n) => addMonths(month, n));
+      const trend = months6.map((m) => ({ m, ...listingStats(data.listings.filter((l) => inRange(l.date_received, monthRange(m))), data.listing_channels, sla, now) }));
+      const short = (m) => monthLabel(m).slice(0, 3);
+      return (
+        <div>
+          <PageHeader title="Operations dashboard" sub="Red items first" />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <Tile label="SLA breached" value={breached.length} tone={breached.length ? 'red' : null} />
+              <Tile label="Claimed, not found" value={cnf.length} tone={cnf.length ? 'red' : null} />
+              <Tile label={`Incomplete > ${(sla && sla.incomplete_alert) || 24}h`} value={stale.length} tone={stale.length ? 'red' : null} />
+              <Tile label="Waiting approval" value={review.length + submitted.length} onClick={() => go('tasks')} />
+              <Tile label="Tasks overdue" value={overdue.length} tone={overdue.length ? 'red' : null} onClick={() => go('tasks')} />
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Section title="Breached SLAs (> 72h, not live)" count={breached.length} tone="red">{limitList(breached, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.assigned_to || l.entered_by)} · ${LISTING_STATUS[l.status][0]}`} />, 'No breaches.')}</Section>
+              <Section title="Claimed published — NOT found on website" count={cnf.length} tone="red">{limitList(cnf, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} claimed ${fmtDateTime(l.date_published_claimed)}`} />, 'Every claim has been verified.')}</Section>
+              <Section title="Incomplete for more than 24h" count={stale.length} tone="red">{limitList(stale, (l) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} · ${l.completeness_pct}% · missing ${(l.missing_fields || []).length}`} />, 'None.')}</Section>
+              <Section title="At risk (48–72h)" count={atRisk.length}>{limitList(atRisk, ({ l }) => <ListingLine key={l.id} l={l} note={nameOf(l.assigned_to || l.entered_by)} />, 'None.')}</Section>
+              <Section title="Waiting for your approval" count={review.length + submitted.length}>{limitList([...review.map((t) => ({ k: t.id, text: `Task · ${t.title}`, by: nameOf(t.assigned_to), to: 'tasks' })), ...submitted.map((d) => ({ k: d.id, text: `Deliverable · ${titleCase(d.item_type)}`, by: (data.agencies.find((a) => a.id === d.agency_id) || {}).display_name, to: 'agencies' }))], (x) => <button key={x.k} onClick={() => go(x.to)} className="flex w-full justify-between border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{x.text}</span><span className="text-xs text-slate-500">{x.by}</span></button>, 'Nothing to approve.')}</Section>
+              <Section title="Overdue tasks" count={overdue.length} tone="red">{limitList(overdue, (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full justify-between border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className="whitespace-nowrap text-xs text-rose-700">{nameOf(t.assigned_to)} · {fmtDate(t.due_at)}</span></button>, 'None.')}</Section>
+            </div>
+            <Card className="scroll-x p-4">
+              <h3 className="mb-3 text-sm font-semibold text-brand-800">Team KPIs — {monthLabel(month)}</h3>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-slate-500"><tr>{['Name', 'Role', 'Listings', 'Avg complete', 'Avg hours', 'Within SLA', 'Not found', 'Tasks done', 'Tasks late'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                <tbody>{team.map((k) => <tr key={k.user_id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-2 font-medium">{k.name}</td><td className="px-2 py-2 text-slate-500">{ROLE_LABEL[k.role]}</td><td className="num px-2 py-2">{k.listings_entered}</td><td className="num px-2 py-2">{show(k.avg_completeness, '%')}</td><td className="num px-2 py-2">{show(k.avg_hours_to_publish, 'h')}</td><td className="num px-2 py-2">{show(k.on_time_pct, '%')}</td><td className={`num px-2 py-2 ${k.claimed_not_found ? 'font-semibold text-rose-700' : ''}`}>{k.claimed_not_found}</td><td className="num px-2 py-2">{k.tasks_completed}</td><td className={`num px-2 py-2 ${k.tasks_late ? 'text-rose-700' : ''}`}>{k.tasks_late}</td></tr>)}</tbody>
+              </table>
+            </Card>
+            {me.role === 'admin' && (
+              <>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {data.agencies.filter((a) => a.is_active).map((a) => { const sc = agencyScorecard(a, month, data); return (
+                    <Card key={a.id} className="cursor-pointer p-4 hover:border-brand-500" onClick={() => go('agencies')}>
+                      <h3 className="text-sm font-semibold text-brand-800">{a.display_name} — {monthLabel(month)}</h3>
+                      <div className="mt-2 grid grid-cols-4 gap-2 text-center text-sm">{[['Delivery', show(sc.delivery_rate, '%')], ['On time', show(sc.on_time_pct, '%')], ['Revisions', show(sc.revision_rate, '%')], ['Cost/lead', sc.cpl == null ? '—' : money(sc.cpl, sc.currency)]].map(([k, v]) => <div key={k}><div className="num text-lg font-bold text-slate-900">{v}</div><div className="text-xs text-slate-500">{k}</div></div>)}</div>
+                    </Card>); })}
+                </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <Card className="p-4"><h3 className="mb-2 text-sm font-semibold text-brand-800">Listings received per month</h3><Bars rows={trend.map((t) => ({ label: short(t.m), value: t.entered }))} /></Card>
+                  <Card className="p-4"><h3 className="mb-2 text-sm font-semibold text-brand-800">Published within 72h (%)</h3><Bars unit="%" rows={trend.map((t) => ({ label: short(t.m), value: t.on_time_pct }))} /></Card>
+                  <Card className="p-4"><h3 className="mb-2 text-sm font-semibold text-brand-800">Avg hours to publish</h3><Bars rows={trend.map((t) => ({ label: short(t.m), value: t.avg_hours }))} /></Card>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // REPORTS — built live from the data; "Freeze" stores a snapshot so a closed month never changes
+    // =========================================================================================
+    const LISTING_COLS = [['entered', 'Entered'], ['verified', 'Verified live'], ['avg_hours', 'Avg hours'], ['on_time_pct', 'Within SLA %'], ['avg_completeness', 'Avg complete %'], ['breached', 'Breached'], ['rejected', 'Rejected'], ['portal_coverage_pct', 'Portal coverage %']];
+    const BREAKDOWNS = {
+      person: ['By person', LISTING_COLS], source: ['By source type', LISTING_COLS], source_name: ['By source (who gave it)', LISTING_COLS], location: ['By location', LISTING_COLS],
+      channel: ['By channel', [['total', 'Listings'], ['published', 'Published'], ['in_progress', 'In progress'], ['rejected', 'Rejected'], ['coverage_pct', 'Coverage %']]],
+      agency: ['By agency', [['planned', 'Planned'], ['delivered', 'Delivered'], ['delivery_rate', 'Delivery %'], ['on_time_pct', 'On time %'], ['revision_rate', 'Revision %'], ['leads', 'Leads'], ['cpl', 'Cost / lead']]],
+    };
+    const KPI_COLS = [['name', 'Name'], ['listings_entered', 'Listings'], ['avg_completeness', 'Avg complete %'], ['avg_hours_to_publish', 'Avg hours'], ['on_time_pct', 'Within SLA %'], ['rejected_count', 'Rejected'], ['portal_coverage_pct', 'Portal cov. %'], ['claimed_not_found', 'Not found'], ['tasks_completed', 'Tasks done'], ['tasks_due', 'Tasks due'], ['tasks_on_time_pct', 'Tasks on time %']];
+
+    const DataTable = ({ cols, rows, first = 'label', firstLabel = '' }) => !rows.length ? <p className="text-sm text-slate-400">No data in this period.</p> : (
+      <div className="scroll-x"><table className="w-full text-sm">
+        <thead className="text-left text-xs text-slate-500"><tr>{first && <th className="px-2 py-1.5 font-medium">{firstLabel}</th>}{cols.map(([k, l]) => <th key={k} className={`px-2 py-1.5 font-medium ${k === 'name' ? '' : 'text-right'}`}>{l}</th>)}</tr></thead>
+        <tbody>{rows.map((r, i) => <tr key={i} className="border-t border-slate-100">{first && <td className="px-2 py-1.5 font-medium">{r[first]}</td>}{cols.map(([k]) => <td key={k} className={`num px-2 py-1.5 ${k === 'name' ? 'font-medium' : 'text-right'}`}>{show(r[k])}</td>)}</tr>)}</tbody>
+      </table></div>
+    );
+
+    const ReportView = ({ report, by }) => {
+      const s = report.summary; const total = report.sla.green + report.sla.yellow + report.sla.red;
+      const [bTitle, bCols] = BREAKDOWNS[by];
+      return (
+        <div className="space-y-4">
+          <div className="hidden print:block"><h1 className="text-xl font-bold">Home &amp; Vacation — HV Ops {report.label} report</h1><p className="text-sm">{report.from} → {report.to} · generated {fmtDateTime(report.generated_at)}</p></div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+            <Tile label="Listings entered" value={s.entered} /><Tile label="Verified live" value={s.verified} /><Tile label="Open breaches" value={s.breaches_open} tone={s.breaches_open ? 'red' : null} />
+            <Tile label="Open incomplete" value={s.incomplete_open} /><Tile label="Claimed, not found" value={s.claimed_not_found} tone={s.claimed_not_found ? 'red' : null} /><Tile label="Tasks done / due" value={`${s.tasks_completed} / ${s.tasks_due}`} />
+          </div>
+          <Card className="p-4">
+            <h3 className="mb-2 text-sm font-semibold text-brand-800">SLA distribution — listings received in period</h3>
+            {total === 0 ? <p className="text-sm text-slate-400">No listings received in this period.</p> : (
+              <><div className="flex h-5 overflow-hidden rounded-full">{['green', 'yellow', 'red'].map((k) => report.sla[k] > 0 && <div key={k} className={SLA_STYLE[k].dot} style={{ width: `${(100 * report.sla[k]) / total}%`, marginRight: 2 }} />)}</div>
+                <div className="mt-2 flex flex-wrap gap-4 text-sm">{['green', 'yellow', 'red'].map((k) => <span key={k} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${SLA_STYLE[k].dot}`} />{SLA_STYLE[k].label} ({k === 'green' ? '<48h' : k === 'yellow' ? '48–72h' : '>72h'}): <b className="num">{report.sla[k]}</b> · {pct(report.sla[k], total)}%</span>)}</div></>
+            )}
+          </Card>
+          <Card className="p-4"><h3 className="mb-2 text-sm font-semibold text-brand-800">KPI table — per person</h3><DataTable cols={KPI_COLS} rows={report.kpis} first={null} /></Card>
+          <Card className="p-4"><h3 className="mb-2 text-sm font-semibold text-brand-800">{bTitle}</h3><DataTable cols={bCols} rows={report.breakdowns[by] || []} /></Card>
+          {by !== 'agency' && report.breakdowns.agency.length > 0 && <Card className="p-4"><h3 className="mb-2 text-sm font-semibold text-brand-800">Agency scorecards</h3><DataTable cols={BREAKDOWNS.agency[1]} rows={report.breakdowns.agency} /></Card>}
+        </div>
+      );
+    };
+
+    const ReportsPage = () => {
+      const { me, data, cfg, now, save, toast } = useApp();
+      const [preset, setPreset] = useState('daily'); const [by, setBy] = useState('person'); const [snap, setSnap] = useState(null);
+      const [custom, setCustom] = useState({ from: ymd(addDays(new Date(), -30)), to: ymd(new Date()) }); const [month, setMonth] = useState(monthStart());
+      const today = startOfDay();
+      const range = preset === 'daily' ? { from: addDays(today, -1), to: today } : preset === 'weekly' ? { from: addDays(today, -7), to: today } : preset === 'monthly' ? monthRange(month)
+        : { from: startOfDay(new Date(custom.from || new Date())), to: addDays(startOfDay(new Date(custom.to || new Date())), 1) };
+      const label = preset === 'daily' ? `Daily (${fmtDate(range.from)})` : preset === 'weekly' ? 'Weekly (last 7 days)' : preset === 'monthly' ? `Monthly (${monthLabel(month)})` : 'Custom';
+      const live = useMemo(() => buildReport(range, label, data, cfg, now), [preset, month, custom.from, custom.to, data, now]);
+      const report = snap ? snap.payload : live;
+      const exportCsv = () => {
+        const [bTitle, bCols] = BREAKDOWNS[by]; const lines = [];
+        lines.push([`HV Ops ${report.label} report`, report.from, report.to]); lines.push([]);
+        lines.push(['Summary']); Object.entries(report.summary).forEach(([k, v]) => lines.push([titleCase(k), v])); lines.push([]);
+        lines.push(['KPI table']); lines.push(KPI_COLS.map((c) => c[1])); report.kpis.forEach((r) => lines.push(KPI_COLS.map(([k]) => r[k]))); lines.push([]);
+        lines.push([bTitle]); lines.push(['', ...bCols.map((c) => c[1])]); (report.breakdowns[by] || []).forEach((r) => lines.push([r.label, ...bCols.map(([k]) => r[k])]));
+        downloadCSV(`hv-ops-report-${report.from}_${report.to}.csv`, lines[0], lines.slice(1));
+      };
+      const freeze = async () => {
+        const row = await save('report_snapshots', { report_type: preset, period_start: live.from, period_end: live.to, title: live.label, payload: live, created_by: me.id });
+        if (row) toast('Snapshot frozen');
+      };
+      return (
+        <div>
+          <PageHeader title="Reports" sub={snap ? `Frozen snapshot · ${snap.title} · saved ${fmtDateTime(snap.created_at)}` : `${report.from} → ${report.to}`}>
+            <Btn kind="ghost" onClick={exportCsv}>CSV</Btn><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print / PDF</Btn>
+            {!snap && isMgr(me) && <Btn onClick={freeze}>Freeze snapshot</Btn>}{snap && <Btn onClick={() => setSnap(null)}>Back to live</Btn>}
+          </PageHeader>
+          {!snap && <Tabs value={preset} onChange={setPreset} tabs={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom range']]} />}
+          <div className="no-print mb-4 flex flex-wrap items-end gap-3">
+            {!snap && preset === 'monthly' && <MonthPicker value={month} onChange={setMonth} />}
+            {!snap && preset === 'custom' && <><Field label="From"><input type="date" className={inputCls()} value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /></Field><Field label="To"><input type="date" className={inputCls()} value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></Field></>}
+            <Field label="Breakdown"><Select value={by} onChange={(v) => setBy(v || 'person')} options={Object.entries(BREAKDOWNS).map(([k, v]) => [k, v[0]])} /></Field>
+            {isMgr(me) && data.report_snapshots.length > 0 && <Field label="Frozen snapshots"><Select value={snap ? snap.id : null} placeholder="Live data" onChange={(v) => setSnap(data.report_snapshots.find((x) => x.id === v) || null)} options={data.report_snapshots.map((x) => [x.id, `${x.title} · ${x.period_start}`])} /></Field>}
+          </div>
+          <ReportView report={report} by={by} />
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // ALERTS
+    // =========================================================================================
+    const ALERT_STYLE = { critical: 'border-l-rose-600 bg-rose-50', warning: 'border-l-amber-500 bg-amber-50', info: 'border-l-sky-500 bg-white' };
+    const AlertsPage = () => {
+      const { data, setData, go, toast } = useApp();
+      const [onlyUnread, setOnlyUnread] = useState(true);
+      const rows = data.alerts.filter((a) => !onlyUnread || !a.is_read);
+      const mark = async (ids) => {
+        if (!ids.length) return;
+        const { data: saved, error } = await sbc.from('alerts').update({ is_read: true }).in('id', ids).select();
+        if (error) { toast(friendlyError(error), 'error'); return; }
+        const m = new Map(saved.map((s) => [s.id, s]));
+        setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
+      };
+      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
+      return (
+        <div>
+          <PageHeader title="Alerts" sub="Raised hourly by the verifier worker">
+            <Btn kind="ghost" onClick={() => setOnlyUnread(!onlyUnread)}>{onlyUnread ? 'Show all' : 'Unread only'}</Btn>
+            <Btn kind="ghost" onClick={() => mark(data.alerts.filter((a) => !a.is_read).map((a) => a.id))}>Mark all read</Btn>
+          </PageHeader>
+          {!rows.length ? <Empty>No {onlyUnread ? 'unread ' : ''}alerts.</Empty> : (
+            <div className="space-y-2">{rows.map((a) => (
+              <Card key={a.id} className={`cursor-pointer border-l-4 p-3 ${ALERT_STYLE[a.level]} ${a.is_read ? 'opacity-60' : ''}`} onClick={() => openAlert(a)}>
+                <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold text-slate-900">{a.title}</div><span className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(a.created_at)}</span></div>
+                {a.body && <div className="mt-0.5 break-words text-sm text-slate-600">{a.body}</div>}
+              </Card>))}</div>
+          )}
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // SETTINGS (admin)
+    // =========================================================================================
+    const KVEditor = ({ settingKey, nameLabel, codeLabel, hint }) => {
+      const { cfg, saveSetting } = useApp();
+      const [rows, setRows] = useState(() => Object.entries(cfg[settingKey] || {}).sort((a, b) => a[0].localeCompare(b[0])));
+      const [busy, setBusy] = useState(false);
+      const codes = rows.map((r) => r[1].trim().toUpperCase()); const dupCode = codes.find((c, i) => c && codes.indexOf(c) !== i);
+      const submit = async () => { setBusy(true); await saveSetting(settingKey, Object.fromEntries(rows.filter((r) => r[0].trim() && r[1].trim()).map((r) => [r[0].trim(), r[1].trim().toUpperCase().replace(/[^A-Z0-9]/g, '')]))); setBusy(false); };
+      return (
+        <Card className="p-4">
+          <p className="mb-3 text-sm text-slate-500">{hint}</p>
+          <div className="space-y-2">
+            {rows.map((r, i) => (
+              <div key={i} className="flex gap-2">
+                <input className={inputCls()} placeholder={nameLabel} value={r[0]} onChange={(e) => setRows(rows.map((x, j) => j === i ? [e.target.value, x[1]] : x))} />
+                <input className={`${inputCls(dupCode && r[1].trim().toUpperCase() === dupCode)} !w-28 font-mono uppercase`} placeholder={codeLabel} value={r[1]} onChange={(e) => setRows(rows.map((x, j) => j === i ? [x[0], e.target.value] : x))} />
+                <button className="px-2 text-slate-400 hover:text-rose-600" onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label="Remove"><Icon name="x" className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+          {dupCode && <p className="mt-2 text-sm text-rose-700">Code {dupCode} is used twice.</p>}
+          <div className="mt-3 flex gap-2"><Btn kind="ghost" onClick={() => setRows([...rows, ['', '']])}><Icon name="plus" className="h-4 w-4" />Add row</Btn><Btn onClick={submit} disabled={busy || !!dupCode}>Save</Btn></div>
+        </Card>
+      );
+    };
+
+    const ListEditor = ({ settingKey, title, hint }) => {
+      const { cfg, saveSetting } = useApp();
+      const [items, setItems] = useState(cfg[settingKey] || []); const [v, setV] = useState('');
+      const add = () => { const x = v.trim(); if (x && !items.includes(x)) setItems([...items, x]); setV(''); };
+      return (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-brand-800">{title}</h3>{hint && <p className="mb-2 text-xs text-slate-500">{hint}</p>}
+          <div className="my-2 flex flex-wrap gap-1.5">{items.map((it) => <span key={it} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs">{it}<button onClick={() => setItems(items.filter((x) => x !== it))} className="text-slate-400 hover:text-rose-600">×</button></span>)}</div>
+          <div className="flex gap-2"><input className={inputCls()} value={v} placeholder="Add…" onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><Btn kind="ghost" onClick={add}>Add</Btn><Btn onClick={() => saveSetting(settingKey, items)}>Save</Btn></div>
+        </Card>
+      );
+    };
+
+    const UsersTab = () => {
+      const { me, data, cfg, save, reloadTable, workerCall, toast } = useApp();
+      const [form, setForm] = useState(null); const [pw, setPw] = useState(null); const [busy, setBusy] = useState(false);
+      const hasWorker = !!cfg.worker_url;
+      const create = async () => {
+        setBusy(true); const r = await workerCall('/admin/users', form); setBusy(false);
+        if (r && r.profile) { await reloadTable('profiles'); toast(`User ${r.profile.email} created`); setForm(null); }
+      };
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-500">There is no public sign-up. Deactivate instead of deleting — history stays intact.</p>
+            <div className="flex gap-2"><Btn kind="ghost" onClick={() => reloadTable('profiles')}>Refresh</Btn><Btn onClick={() => setForm({ email: '', full_name: '', role: 'data_entry', phone: '', password: '' })}><Icon name="plus" className="h-4 w-4" />New user</Btn></div>
+          </div>
+          {data.profiles.map((p) => (
+            <Card key={p.id} className={`p-3 ${p.is_active ? '' : 'opacity-60'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0"><div className="font-medium text-slate-900">{p.full_name || '—'} {!p.is_active && <Badge className="bg-amber-100 text-amber-800">Inactive</Badge>}</div><div className="truncate text-xs text-slate-500">{p.email}{p.phone ? ` · ${p.phone}` : ''}</div></div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="w-44"><Select value={p.role} disabled={p.id === me.id} onChange={(v) => v && save('profiles', { role: v }, p.id)} options={Object.entries(ROLE_LABEL)} /></div>
+                  <Btn kind="ghost" className="!py-1.5" onClick={() => { const name = prompt('Full name', p.full_name || ''); if (name == null) return; const phone = prompt('WhatsApp phone in international format, e.g. +201001234567', p.phone || ''); if (phone == null) return; save('profiles', { full_name: name.trim(), phone: phone.trim() || null }, p.id); }}>Edit</Btn>
+                  {hasWorker && <Btn kind="ghost" className="!py-1.5" onClick={() => setPw({ user_id: p.id, email: p.email, password: '' })}>Password</Btn>}
+                  {p.id !== me.id && <Btn kind={p.is_active ? 'ghost' : 'ok'} className="!py-1.5" onClick={() => save('profiles', { is_active: !p.is_active }, p.id)}>{p.is_active ? 'Deactivate' : 'Activate'}</Btn>}
+                </div>
+              </div>
+            </Card>
+          ))}
+          {form && (
+            <Modal title="New user" onClose={() => setForm(null)} footer={hasWorker ? <><Btn kind="ghost" onClick={() => setForm(null)}>Cancel</Btn><Btn disabled={busy || !form.email || form.password.length < 8} onClick={create}>Create user</Btn></> : <Btn kind="ghost" onClick={() => setForm(null)}>Close</Btn>}>
+              {!hasWorker ? (
+                <ol className="list-decimal space-y-1.5 pl-5 text-sm text-slate-700">
+                  <li>The one-click form needs the worker. Set its URL in Settings → Verifier, or:</li>
+                  <li>Open Supabase → Authentication → Users → <b>Add user</b> (email + password, tick “Auto confirm”).</li>
+                  <li>Come back here and press <b>Refresh</b>. The new user appears as <b>Inactive</b>.</li>
+                  <li>Pick the role and press <b>Activate</b>.</li>
+                </ol>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Email" className="col-span-2"><input type="email" className={inputCls()} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value.trim() })} /></Field>
+                  <Field label="Full name"><input className={inputCls()} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></Field>
+                  <Field label="Role"><Select value={form.role} onChange={(v) => setForm({ ...form, role: v || 'data_entry' })} options={Object.entries(ROLE_LABEL)} /></Field>
+                  <Field label="WhatsApp phone (+20…)"><input className={inputCls()} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+                  <Field label="Temporary password (8+)"><input type="text" autoComplete="off" className={inputCls()} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
+                </div>
+              )}
+            </Modal>
+          )}
+          {pw && (
+            <Modal title={`New password — ${pw.email}`} onClose={() => setPw(null)} footer={<><Btn kind="ghost" onClick={() => setPw(null)}>Cancel</Btn><Btn disabled={pw.password.length < 8} onClick={async () => { const r = await workerCall('/admin/users/password', { user_id: pw.user_id, password: pw.password }); if (r) { toast('Password changed'); setPw(null); } }}>Set password</Btn></>}>
+              <Field label="New password (8+ characters)"><input type="text" autoComplete="off" className={inputCls()} value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} /></Field>
+            </Modal>
+          )}
+        </div>
+      );
+    };
+
+    const AgencyContractForm = ({ agency }) => {
+      const { save, cfg } = useApp();
+      const [f, setF] = useState(agency); const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const submit = () => save('agencies', { display_name: f.display_name, contact_person: f.contact_person || null, contact_email: f.contact_email || null, contact_phone: f.contact_phone || null, contract_start: f.contract_start || null,
+        contract_end: f.contract_end || null, monthly_fee: f.monthly_fee === '' || f.monthly_fee == null ? null : Number(f.monthly_fee), currency: f.currency || null, scope_notes: f.scope_notes || null, is_active: f.is_active }, agency.id);
+      return (
+        <Card className="p-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="Display name"><input className={inputCls()} value={f.display_name || ''} onChange={(e) => set('display_name', e.target.value)} /></Field>
+            <Field label="Contact person"><input className={inputCls()} value={f.contact_person || ''} onChange={(e) => set('contact_person', e.target.value)} /></Field>
+            <Field label="Contact email"><input className={inputCls()} value={f.contact_email || ''} onChange={(e) => set('contact_email', e.target.value)} /></Field>
+            <Field label="Contact phone"><input className={inputCls()} value={f.contact_phone || ''} onChange={(e) => set('contact_phone', e.target.value)} /></Field>
+            <Field label="Contract start"><input type="date" className={inputCls()} value={f.contract_start || ''} onChange={(e) => set('contract_start', e.target.value)} /></Field>
+            <Field label="Contract end"><input type="date" className={inputCls()} value={f.contract_end || ''} onChange={(e) => set('contract_end', e.target.value)} /></Field>
+            <Field label="Monthly fee"><input type="number" step="any" className={inputCls()} value={f.monthly_fee == null ? '' : f.monthly_fee} onChange={(e) => set('monthly_fee', e.target.value)} /></Field>
+            <Field label="Currency (not converted)"><Select value={f.currency} onChange={(v) => set('currency', v)} options={[...(cfg.currencies || []), 'GBP']} /></Field>
+            <Field label="Scope" className="col-span-2 sm:col-span-3"><textarea rows={2} className={inputCls()} value={f.scope_notes || ''} onChange={(e) => set('scope_notes', e.target.value)} /></Field>
+          </div>
+          <div className="mt-3"><Btn onClick={submit}>Save {agency.display_name}</Btn></div>
+        </Card>
+      );
+    };
+
+    const MetricDefsEditor = () => {
+      const { cfg, data, saveSetting } = useApp();
+      const [defs, setDefs] = useState(cfg.metric_defs || {});
+      const upd = (a, i, k, v) => setDefs({ ...defs, [a]: defs[a].map((d, j) => j === i ? { ...d, [k]: v } : d) });
+      return (
+        <div className="space-y-4">{data.agencies.map((a) => (
+          <Card key={a.id} className="p-4">
+            <h3 className="mb-2 text-sm font-semibold text-brand-800">{a.display_name} — monthly metrics</h3>
+            <div className="space-y-2">{(defs[a.name] || []).map((d, i) => (
+              <div key={i} className="flex gap-2">
+                <input className={`${inputCls()} font-mono`} placeholder="key" value={d.key} onChange={(e) => upd(a.name, i, 'key', e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))} />
+                <input className={inputCls()} placeholder="Label" value={d.label} onChange={(e) => upd(a.name, i, 'label', e.target.value)} />
+                <div className="w-32 shrink-0"><Select value={d.unit} onChange={(v) => upd(a.name, i, 'unit', v || 'count')} options={['count', '%', 'currency']} /></div>
+                <button className="px-1 text-slate-400 hover:text-rose-600" onClick={() => setDefs({ ...defs, [a.name]: defs[a.name].filter((_, j) => j !== i) })}><Icon name="x" className="h-4 w-4" /></button>
+              </div>))}</div>
+            <div className="mt-3 flex gap-2"><Btn kind="ghost" onClick={() => setDefs({ ...defs, [a.name]: [...(defs[a.name] || []), { key: '', label: '', unit: 'count' }] })}>Add metric</Btn><Btn onClick={() => saveSetting('metric_defs', defs)}>Save</Btn></div>
+          </Card>))}
+        </div>
+      );
+    };
+
+    const VerifierTab = () => {
+      const { cfg, data, saveSetting, workerCall, reloadTable, toast } = useApp();
+      const [url, setUrl] = useState(cfg.worker_url || ''); const [busy, setBusy] = useState(false);
+      const runNow = async () => { setBusy(true); const r = await workerCall('/run'); setBusy(false); if (r) { toast(`Verifier: ${r.refs_found} refs read, ${r.listings_verified} listings verified`); reloadTable('verifier_runs'); reloadTable('listings'); reloadTable('alerts'); } };
+      return (
+        <div className="space-y-4">
+          <Card className="p-4">
+            <Field label="Worker URL" hint="Shown by “wrangler deploy”, e.g. https://hv-ops-verifier.<account>.workers.dev — enables New user, Run now and recurring generation buttons.">
+              <div className="flex gap-2"><input className={inputCls()} value={url} onChange={(e) => setUrl(e.target.value.trim())} placeholder="https://…workers.dev" /><Btn onClick={() => saveSetting('worker_url', url.replace(/\/+$/, ''))}>Save</Btn></div>
+            </Field>
+            {cfg.worker_url && <div className="mt-3"><Btn kind="soft" onClick={runNow} disabled={busy}>{busy ? 'Running…' : 'Run verifier now'}</Btn></div>}
+          </Card>
+          <Card className="scroll-x p-4">
+            <h3 className="mb-2 text-sm font-semibold text-brand-800">Last runs</h3>
+            {!data.verifier_runs.length ? <p className="text-sm text-slate-400">The verifier has not run yet.</p> : (
+              <table className="w-full text-sm"><thead className="text-left text-xs text-slate-500"><tr>{['Started', 'Method', 'Pages listed', 'Fetched', 'Refs read', 'Verified', 'Alerts', 'Backlog left', 'Error'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                <tbody>{data.verifier_runs.map((r) => <tr key={r.id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-1.5">{fmtDateTime(r.started_at)}</td><td className="px-2 py-1.5">{r.method}</td><td className="num px-2 py-1.5">{r.pages_listed}</td><td className="num px-2 py-1.5">{r.pages_fetched}</td><td className="num px-2 py-1.5">{r.refs_found}</td><td className="num px-2 py-1.5">{r.listings_verified}</td><td className="num px-2 py-1.5">{r.alerts_created}</td><td className="num px-2 py-1.5">{r.pending_pages}</td><td className="max-w-[16rem] truncate px-2 py-1.5 text-rose-700" title={r.error || ''}>{r.error || ''}</td></tr>)}</tbody></table>
+            )}
+          </Card>
+        </div>
+      );
+    };
+
+    const SettingsPage = () => {
+      const { cfg, data, saveSetting } = useApp();
+      const [tab, setTab] = useState('users');
+      const [sla, setSla] = useState(cfg.sla_hours || {}); const [req, setReq] = useState(cfg.required_fields || []); const [chans, setChans] = useState(cfg.default_channels || []); const [labels, setLabels] = useState(cfg.portal_labels || {});
+      const candidates = Object.keys(FIELD_LABEL).filter((k) => !['date_received', 'source_type', 'source_name', 'assigned_to'].includes(k));
+      return (
+        <div>
+          <PageHeader title="Settings" sub="Admin only" />
+          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA hours'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier']]} />
+          {tab === 'users' && <UsersTab />}
+          {tab === 'loc' && <KVEditor settingKey="location_codes" nameLabel="Location (as on the website)" codeLabel="Code" hint="First part of the reference code (HD-A-1012-S). Changing a code only affects NEW listings — existing codes never change." />}
+          {tab === 'types' && <KVEditor settingKey="unit_type_codes" nameLabel="Unit type" codeLabel="Code" hint="Second part of the reference code." />}
+          {tab === 'req' && (
+            <Card className="p-4">
+              <p className="mb-3 text-sm text-slate-500">Ticked fields count toward 100% completeness ({req.length} selected). A listing cannot move to Ready to publish until all are filled. Existing listings are re-scored the next time they are saved.</p>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">{candidates.map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={req.includes(k)} onChange={() => setReq(req.includes(k) ? req.filter((x) => x !== k) : [...req, k])} />{FIELD_LABEL[k]}</label>)}</div>
+              <div className="mt-3"><Btn onClick={() => saveSetting('required_fields', req)}>Save</Btn></div>
+            </Card>
+          )}
+          {tab === 'sla' && (
+            <Card className="p-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[['warn', 'At risk after (h)'], ['breach', 'Breached after (h)'], ['incomplete_alert', 'Incomplete alert after (h)'], ['claim_grace', 'Claimed-not-found after (h)']].map(([k, l]) => <Field key={k} label={l}><input type="number" min="1" className={inputCls()} value={sla[k] == null ? '' : sla[k]} onChange={(e) => setSla({ ...sla, [k]: e.target.value })} /></Field>)}
+              </div>
+              <div className="mt-3"><Btn onClick={() => saveSetting('sla_hours', Object.fromEntries(Object.entries(sla).map(([k, v]) => [k, Number(v)])))}>Save</Btn></div>
+            </Card>
+          )}
+          {tab === 'portals' && (
+            <Card className="p-4">
+              <p className="mb-3 text-sm text-slate-500">Tick the channels every new listing should get automatically. Rename a portal with its label. (A brand-new portal needs one small SQL migration to add it to the channel list.)</p>
+              <div className="space-y-2">{Object.keys(labels).map((c) => (
+                <div key={c} className="flex items-center gap-3"><input type="checkbox" className="h-4 w-4" checked={chans.includes(c)} onChange={() => setChans(chans.includes(c) ? chans.filter((x) => x !== c) : [...chans, c])} /><span className="w-36 font-mono text-xs text-slate-500">{c}</span><input className={inputCls()} value={labels[c]} onChange={(e) => setLabels({ ...labels, [c]: e.target.value })} /></div>))}</div>
+              <div className="mt-3"><Btn onClick={async () => { await saveSetting('default_channels', chans); await saveSetting('portal_labels', labels); }}>Save</Btn></div>
+            </Card>
+          )}
+          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /></div>}
+          {tab === 'metrics' && <MetricDefsEditor />}
+          {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
+          {tab === 'verifier' && <VerifierTab />}
+        </div>
+      );
+    };
+
+    // =========================================================================================
+    // LOGIN / CONNECT
+    // =========================================================================================
+    const Shell = ({ children }) => (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-brand-800 p-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+          <div className="mb-5 text-center"><div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-800 text-xl font-black text-white">HV</div><h1 className="text-lg font-bold text-slate-900">HV Ops</h1><p className="text-xs text-slate-500">Home &amp; Vacation · Operations</p></div>
+          {children}
+        </div>
+        <p className="mt-4 text-xs text-brand-200">HV Ops {APP_VERSION}</p>
+      </div>
+    );
+
+    const ConnectScreen = ({ onDone }) => {
+      const [url, setUrl] = useState(''); const [key, setKey] = useState('');
+      const go = () => { try { localStorage.setItem('hvops_sb_url', url.trim()); localStorage.setItem('hvops_sb_key', key.trim()); } catch (e) {} if (initSupabase()) onDone(); };
+      return (
+        <Shell>
+          <p className="mb-3 text-sm text-slate-600">Connect this app to the HV Ops Supabase project (Project Settings → API).</p>
+          <div className="space-y-3">
+            <Field label="Project URL"><input className={inputCls()} placeholder="https://xxxx.supabase.co" value={url} onChange={(e) => setUrl(e.target.value)} /></Field>
+            <Field label="anon / publishable key"><textarea rows={3} className={`${inputCls()} !text-xs`} value={key} onChange={(e) => setKey(e.target.value)} /></Field>
+            <Btn className="w-full" disabled={!/^https:\/\/.+/.test(url.trim()) || key.trim().length < 20} onClick={go}>Connect</Btn>
+          </div>
+        </Shell>
+      );
+    };
+
+    const Login = ({ onReconfigure, notice }) => {
+      const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(notice || ''); const [busy, setBusy] = useState(false);
+      const submit = async (e) => {
+        e.preventDefault(); setBusy(true); setErr('');
+        const { error } = await sbc.auth.signInWithPassword({ email: email.trim(), password });
+        setBusy(false); if (error) setErr(error.message);
+      };
+      return (
+        <Shell>
+          <form onSubmit={submit} className="space-y-3">
+            <Field label="Email"><input type="email" autoComplete="username" className={inputCls()} value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
+            <Field label="Password"><input type="password" autoComplete="current-password" className={inputCls()} value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
+            {err && <p className="rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{err}</p>}
+            <button type="submit" disabled={busy} className="w-full rounded-lg bg-brand-700 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">{busy ? 'Signing in…' : 'Sign in'}</button>
+          </form>
+          <p className="mt-4 text-center text-xs text-slate-400">Accounts are created by the admin.</p>
+          {!hasBuiltInConfig && <button className="mt-1 w-full text-center text-xs text-slate-400 underline" onClick={onReconfigure}>Reconfigure connection</button>}
+        </Shell>
+      );
+    };
+
+    // =========================================================================================
+    // APP
+    // =========================================================================================
+    const TABLES = {
+      profiles: { order: 'full_name' }, listings: { order: 'date_received', desc: true }, listing_channels: { order: 'updated_at', desc: true }, tasks: { order: 'created_at', desc: true },
+      recurring_templates: { order: 'created_at' }, agencies: { order: 'display_name' }, agency_deliverables: { order: 'due_date' }, agency_metrics: { order: 'period_month', desc: true },
+      kpi_targets: { order: 'period_month', desc: true }, alerts: { order: 'created_at', desc: true, max: 300 }, settings: { order: 'key' }, report_snapshots: { order: 'created_at', desc: true, max: 100 },
+      verifier_runs: { order: 'started_at', desc: true, max: 25 },
+    };
+    const EMPTY = Object.fromEntries(Object.keys(TABLES).map((t) => [t, []]));
+
+    async function fetchAll(table) {
+      const { order, desc, max = 50000 } = TABLES[table]; const out = [];
+      for (let from = 0; from < max; from += 1000) {
+        const { data, error } = await sbc.from(table).select('*').order(order, { ascending: !desc }).range(from, Math.min(from + 999, max - 1));
+        if (error) throw error;
+        out.push(...data); if (data.length < 1000) break;
+      }
+      return out;
+    }
+
+    const NAV = [
+      ['dashboard', 'Home', 'home', () => true], ['listings', 'Listings', 'list', () => true], ['tasks', 'Tasks', 'tasks', () => true], ['alerts', 'Alerts', 'bell', () => true],
+      ['agencies', 'Agencies', 'agency', (me) => me.role !== 'data_entry'], ['kpis', 'KPIs', 'chart', () => true], ['reports', 'Reports', 'report', (me) => isMgr(me)], ['settings', 'Settings', 'cog', (me) => me.role === 'admin'],
+    ];
+
+    const App = () => {
+      const [connected, setConnected] = useState(() => initSupabase());
+      const [session, setSession] = useState(undefined); const [me, setMe] = useState(null); const [notice, setNotice] = useState('');
+      const [data, setData] = useState(EMPTY); const [loading, setLoading] = useState(false); const [loadError, setLoadError] = useState('');
+      const [route, setRoute] = useState({ page: 'dashboard', id: null }); const [toasts, setToasts] = useState([]); const [now, setNow] = useState(Date.now()); const [more, setMore] = useState(false);
+      const sessionRef = useRef(null); sessionRef.current = session;
+
+      const toast = useCallback((text, kind = 'ok') => { const id = Math.random(); setToasts((t) => [...t, { id, text, kind }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 6000 : 2500); }, []);
+      const go = useCallback((page, id = null) => { setRoute({ page, id }); setMore(false); window.scrollTo(0, 0); }, []);
+
+      useEffect(() => {
+        if (!connected) return;
+        sbc.auth.getSession().then(({ data: d }) => setSession(d.session || null));
+        const { data: sub } = sbc.auth.onAuthStateChange((_e, s) => setSession(s || null));   // data reloads only when the user id changes
+        return () => sub.subscription.unsubscribe();
+      }, [connected]);
+
+      const reloadTable = useCallback(async (table) => { try { const rows = await fetchAll(table); setData((d) => ({ ...d, [table]: rows })); } catch (e) { /* keep what we have */ } }, []);
+      const reloadWhere = useCallback(async (table, col, val) => {
+        const { data: rows } = await sbc.from(table).select('*').eq(col, val);
+        if (rows) setData((d) => ({ ...d, [table]: [...d[table].filter((r) => r[col] !== val), ...rows] }));
+      }, []);
+
+      const uid = session && session.user.id;
+      useEffect(() => {
+        if (!uid) { setMe(null); setData(EMPTY); return; }
+        (async () => {
+          setLoading(true); setLoadError('');
+          const { data: prof, error } = await sbc.from('profiles').select('*').eq('id', uid).maybeSingle();
+          if (error || !prof || !prof.is_active) {
+            setNotice(error ? friendlyError(error) : 'This account is not active yet. Ask the admin to activate it in Settings → Users.');
+            await sbc.auth.signOut(); setLoading(false); return;
+          }
+          try {
+            const names = Object.keys(TABLES); const results = await Promise.all(names.map(fetchAll));
+            setData(Object.fromEntries(names.map((n, i) => [n, results[i]]))); setMe(prof); setNotice('');
+          } catch (e) { setLoadError(`${friendlyError(e)} — were all five SQL files run on this project?`); }
+          setLoading(false);
+        })();
+      }, [uid]);
+
+      // the verifier changes data server-side: refresh the moving tables every 3 min and when the tab regains focus
+      useEffect(() => {
+        if (!me) return;
+        const refresh = () => ['listings', 'listing_channels', 'tasks', 'alerts'].forEach(reloadTable);
+        const t1 = setInterval(() => setNow(Date.now()), 60000); const t2 = setInterval(refresh, 180000);
+        const onVis = () => { if (!document.hidden) { setNow(Date.now()); refresh(); } };
+        document.addEventListener('visibilitychange', onVis);
+        return () => { clearInterval(t1); clearInterval(t2); document.removeEventListener('visibilitychange', onVis); };
+      }, [me && me.id]);
+
+      const cfg = useMemo(() => Object.fromEntries(data.settings.map((s) => [s.key, s.value])), [data.settings]);
+      const nameOf = useCallback((id) => { const p = data.profiles.find((x) => x.id === id); return p ? p.full_name || p.email : '—'; }, [data.profiles]);
+
+      // Every write returns the saved row (.select().single()) and local state is updated immediately.
+      const save = useCallback(async (table, values, id) => {
+        const q = id ? sbc.from(table).update(values).eq('id', id) : sbc.from(table).insert(values);
+        const { data: row, error } = await q.select().single();
+        if (error) { toast(friendlyError(error), 'error'); return null; }
+        setData((d) => ({ ...d, [table]: d[table].some((r) => r.id === row.id) ? d[table].map((r) => (r.id === row.id ? row : r)) : [row, ...d[table]] }));
+        if (table === 'profiles') setMe((m) => (m && m.id === row.id ? row : m));
+        return row;
+      }, [toast]);
+      const saveSetting = useCallback(async (key, value) => {
+        const { data: row, error } = await sbc.from('settings').upsert({ key, value, updated_by: sessionRef.current.user.id, updated_at: new Date().toISOString() }).select().single();
+        if (error) { toast(friendlyError(error), 'error'); return null; }
+        setData((d) => ({ ...d, settings: [...d.settings.filter((s) => s.key !== key), row] })); toast('Saved'); return row;
+      }, [toast]);
+      const workerCall = useCallback(async (path, body) => {
+        if (!cfg.worker_url) { toast('Set the worker URL in Settings → Verifier first', 'error'); return null; }
+        try {
+          const { data: s } = await sbc.auth.getSession();
+          const res = await fetch(cfg.worker_url + path, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${s.session.access_token}` }, body: JSON.stringify(body || {}) });
+          const out = await res.json(); if (!res.ok || out.error) throw new Error(out.error || `Worker error ${res.status}`);
+          return out;
+        } catch (e) { toast(String(e.message || e), 'error'); return null; }
+      }, [cfg.worker_url, toast]);
+
+      if (!connected) return <ConnectScreen onDone={() => setConnected(true)} />;
+      if (session === undefined) return <div id="boot">Loading HV Ops…</div>;
+      if (!session) return <Login notice={notice} onReconfigure={() => { try { localStorage.removeItem('hvops_sb_url'); localStorage.removeItem('hvops_sb_key'); } catch (e) {} sbc = null; setConnected(false); }} />;
+      if (loadError) return <Shell><p className="text-sm text-rose-700">{loadError}</p><Btn className="mt-3 w-full" kind="ghost" onClick={() => sbc.auth.signOut()}>Sign out</Btn></Shell>;
+      if (loading || !me) return <div id="boot">Loading your workspace…</div>;
+
+      const nav = NAV.filter((n) => n[3](me));
+      const unread = data.alerts.filter((a) => !a.is_read); const critical = unread.filter((a) => a.level === 'critical');
+      const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' ? route.page : 'dashboard';
+      const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
+      const navBtn = (n, mobile) => {
+        const active = page === n[0] || (n[0] === 'listings' && page === 'listing'); const count = n[0] === 'alerts' ? unread.length : 0;
+        return mobile ? (
+          <button key={n[0]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
+        ) : (
+          <button key={n[0]} onClick={() => go(n[0])} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'}`}><Icon name={n[2]} /><span className="flex-1 text-left">{n[1]}</span>{count > 0 && <span className="rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">{count}</span>}</button>
+        );
+      };
+
+      return (
+        <AppCtx.Provider value={ctx}>
+          <div className="min-h-screen md:flex">
+            {/* desktop sidebar */}
+            <aside className="no-print fixed inset-y-0 hidden w-56 flex-col bg-brand-800 p-3 md:flex">
+              <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-brand-800">HV</div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
+              <nav className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
+              <div className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
+                <button onClick={() => sbc.auth.signOut()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-brand-100 hover:bg-white/10"><Icon name="logout" className="h-4 w-4" />Sign out</button></div>
+            </aside>
+
+            <main className="w-full px-3 pb-24 pt-3 md:ml-56 md:px-6 md:pb-8 md:pt-5">
+              <div className="mx-auto max-w-6xl">
+                {critical.length > 0 && page !== 'alerts' && (
+                  <button onClick={() => go('alerts')} className="no-print mb-3 flex w-full items-center justify-between gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-left text-sm font-semibold text-white shadow">
+                    <span className="truncate">{critical.length} critical alert{critical.length === 1 ? '' : 's'} — {critical[0].title}</span><span className="whitespace-nowrap underline">View</span>
+                  </button>
+                )}
+                {page === 'dashboard' && <Dashboard />}
+                {page === 'listings' && <ListingsPage />}
+                {page === 'listing' && <ListingDetail key={route.id} id={route.id} />}
+                {page === 'tasks' && <TasksPage />}
+                {page === 'agencies' && <AgenciesPage />}
+                {page === 'kpis' && <KpisPage />}
+                {page === 'reports' && <ReportsPage />}
+                {page === 'alerts' && <AlertsPage />}
+                {page === 'settings' && <SettingsPage />}
+              </div>
+            </main>
+
+            {/* phone bottom tabs */}
+            <nav className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white md:hidden">
+              {nav.slice(0, 4).map((n) => navBtn(n, true))}
+              <button onClick={() => setMore(true)} className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${nav.slice(4).some((n) => n[0] === page) ? 'text-brand-700' : 'text-slate-500'}`}><Icon name="more" />More</button>
+            </nav>
+            {more && (
+              <div className="no-print fixed inset-0 z-40 flex items-end bg-slate-900/50 md:hidden" onClick={() => setMore(false)}>
+                <div className="safe-bottom w-full rounded-t-2xl bg-white p-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
+                  {nav.slice(4).map((n) => <button key={n[0]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
+                  <button onClick={() => sbc.auth.signOut()} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-rose-700 hover:bg-rose-50"><Icon name="logout" />Sign out</button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="no-print pointer-events-none fixed inset-x-0 top-3 z-50 flex flex-col items-center gap-2 px-3">
+            {toasts.map((t) => <div key={t.id} className={`pointer-events-auto max-w-md rounded-lg px-4 py-2 text-sm font-medium text-white shadow-lg ${t.kind === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`}>{t.text}</div>)}
+          </div>
+        </AppCtx.Provider>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

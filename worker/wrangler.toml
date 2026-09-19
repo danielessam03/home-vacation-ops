@@ -1,0 +1,22 @@
+name = "hv-ops-verifier"
+main = "verifier.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[triggers]
+# hourly verifier  +  nightly recurring tasks (22:00 UTC = 00:00 Cairo winter / 01:00 summer)
+crons = ["0 * * * *", "0 22 * * *"]
+
+[vars]
+WP_BASE_URL = "https://home-vacation.com"
+WP_CPT = "unit"
+# Free Workers plan allows 50 outbound requests per run. 25 page fetches keeps the run inside that.
+# The first backfill of ~500 existing pages therefore takes about a day of hourly runs. On a paid plan raise this to 300.
+MAX_PAGE_FETCHES = "25"
+WHATSAPP_ENABLED = "false"
+
+# Secrets — set with:  npx wrangler secret put NAME
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_KEY
+#   WHATSAPP_TOKEN              (only when WhatsApp is enabled)
+#   WHATSAPP_PHONE_NUMBER_ID    (only when WhatsApp is enabled)

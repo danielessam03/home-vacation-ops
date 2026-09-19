@@ -1,11 +1,11 @@
 -- HV OPS — 003_views.sql
 -- Views run with the caller's permissions (security_invoker) so RLS still applies.
 
-create or replace view vw_listing_sla with (security_invoker = true) as
+create or replace view ops_vw_listing_sla with (security_invoker = true) as
 with cfg as (
-  select coalesce((select (value->>'warn')::numeric        from settings where key = 'sla_hours'), 48) as warn_h,
-         coalesce((select (value->>'breach')::numeric      from settings where key = 'sla_hours'), 72) as breach_h,
-         coalesce((select (value->>'claim_grace')::numeric from settings where key = 'sla_hours'), 24) as claim_h
+  select coalesce((select (value->>'warn')::numeric        from ops_settings where key = 'sla_hours'), 48) as warn_h,
+         coalesce((select (value->>'breach')::numeric      from ops_settings where key = 'sla_hours'), 72) as breach_h,
+         coalesce((select (value->>'claim_grace')::numeric from ops_settings where key = 'sla_hours'), 24) as claim_h
 ),
 base as (
   select l.*,
@@ -15,7 +15,7 @@ base as (
              - case when l.status = 'on_hold' and l.hold_started_at is not null and l.date_published_verified is null
                     then extract(epoch from (now() - l.hold_started_at)) else 0 end
          ) / 3600.0 as hours_elapsed
-  from listings l
+  from ops_listings l
 )
 select b.*,
        case when b.date_published_verified is not null then round(b.hours_elapsed::numeric, 2) end as hours_to_publish,
@@ -28,7 +28,7 @@ select b.*,
           and b.date_published_claimed < now() - make_interval(hours => cfg.claim_h::int)) as claimed_not_found
 from base b cross join cfg;
 
-create or replace view vw_user_kpis with (security_invoker = true) as
+create or replace view ops_vw_user_kpis with (security_invoker = true) as
 with l as (
   select entered_by as user_id, date_trunc('month', date_received)::date as period_month,
          count(*)                                                   as listings_entered,
@@ -38,14 +38,14 @@ with l as (
                / nullif(count(*) filter (where date_published_verified is not null), 0), 1) as on_time_pct,
          count(*) filter (where status = 'rejected')                as rejected_count,
          count(*) filter (where claimed_not_found)                  as claimed_not_found_count
-  from vw_listing_sla
+  from ops_vw_listing_sla
   where status <> 'archived'
   group by 1, 2
 ),
 c as (
   select li.entered_by as user_id, date_trunc('month', li.date_received)::date as period_month,
          round(100.0 * count(*) filter (where ch.status = 'published') / nullif(count(*), 0), 1) as portal_coverage_pct
-  from listing_channels ch join listings li on li.id = ch.listing_id
+  from ops_listing_channels ch join ops_listings li on li.id = ch.listing_id
   where li.status not in ('archived','rejected')
   group by 1, 2
 ),
@@ -56,7 +56,7 @@ t as (
          count(*) filter (where due_at is not null and (
               (status = 'done' and completed_at > due_at) or
               (status not in ('done','cancelled') and due_at < now())))                      as tasks_late
-  from tasks
+  from ops_tasks
   where assigned_to is not null
   group by 1, 2
 ),
@@ -71,12 +71,12 @@ select k.user_id, p.full_name, p.role, k.period_month,
        coalesce(t.tasks_on_time, 0)           as tasks_on_time,
        coalesce(t.tasks_late, 0)              as tasks_late
 from k
-join profiles p on p.id = k.user_id
+join ops_profiles p on p.id = k.user_id
 left join l on l.user_id = k.user_id and l.period_month = k.period_month
 left join c on c.user_id = k.user_id and c.period_month = k.period_month
 left join t on t.user_id = k.user_id and t.period_month = k.period_month;
 
-create or replace view vw_agency_scorecard with (security_invoker = true) as
+create or replace view ops_vw_agency_scorecard with (security_invoker = true) as
 select d.agency_id, a.display_name, d.period_month,
        sum(d.planned_qty)   as planned_qty,
        sum(d.delivered_qty) as delivered_qty,
@@ -85,5 +85,5 @@ select d.agency_id, a.display_name, d.period_month,
              / nullif(count(*) filter (where d.delivered_at is not null), 0), 1) as on_time_pct,
        sum(d.revisions_count) as revisions,
        round(100.0 * sum(d.revisions_count) / nullif(sum(d.delivered_qty), 0), 1) as revision_rate_pct
-from agency_deliverables d join agencies a on a.id = d.agency_id
+from ops_agency_deliverables d join ops_agencies a on a.id = d.agency_id
 group by 1, 2, 3;

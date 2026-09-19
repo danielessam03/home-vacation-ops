@@ -9,7 +9,7 @@
       const rows = data.alerts.filter((a) => !onlyUnread || !a.is_read);
       const mark = async (ids) => {
         if (!ids.length) return;
-        const { data: saved, error } = await sbc.from('alerts').update({ is_read: true }).in('id', ids).select();
+        const { data: saved, error } = await sbc.from(tbl('alerts')).update({ is_read: true }).in('id', ids).select();
         if (error) { toast(friendlyError(error), 'error'); return; }
         const m = new Map(saved.map((s) => [s.id, s]));
         setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
@@ -73,57 +73,19 @@
     };
 
     const UsersTab = () => {
-      const { me, data, cfg, save, reloadTable, workerCall, toast } = useApp();
-      const [form, setForm] = useState(null); const [pw, setPw] = useState(null); const [busy, setBusy] = useState(false);
-      const hasWorker = !!cfg.worker_url;
-      const create = async () => {
-        setBusy(true); const r = await workerCall('/admin/users', form); setBusy(false);
-        if (r && r.profile) { await reloadTable('profiles'); toast(`User ${r.profile.email} created`); setForm(null); }
-      };
+      const { data, reloadTable } = useApp();
       return (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-500">There is no public sign-up. Deactivate instead of deleting — history stays intact.</p>
-            <div className="flex gap-2"><Btn kind="ghost" onClick={() => reloadTable('profiles')}>Refresh</Btn><Btn onClick={() => setForm({ email: '', full_name: '', role: 'data_entry', phone: '', password: '' })}><Icon name="plus" className="h-4 w-4" />New user</Btn></div>
-          </div>
+          <Card className="flex flex-wrap items-center justify-between gap-2 p-3">
+            <p className="text-sm text-slate-600">One login for every Home Vacation system. Create people, reset passwords and switch HV Ops on or off in <b>HR → Users</b> (tick “HV Ops” and pick the role).</p>
+            <div className="flex gap-2"><Btn kind="ghost" onClick={() => reloadTable('profiles')}>Refresh</Btn><a className="inline-flex items-center rounded-lg bg-brand-700 px-3.5 py-2 text-sm font-medium text-white" href="https://home-vacation-hr.pages.dev" target="_blank" rel="noreferrer">Open HR ↗</a></div>
+          </Card>
           {data.profiles.map((p) => (
-            <Card key={p.id} className={`p-3 ${p.is_active ? '' : 'opacity-60'}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0"><div className="font-medium text-slate-900">{p.full_name || '—'} {!p.is_active && <Badge className="bg-amber-100 text-amber-800">Inactive</Badge>}</div><div className="truncate text-xs text-slate-500">{p.email}{p.phone ? ` · ${p.phone}` : ''}</div></div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="w-44"><Select value={p.role} disabled={p.id === me.id} onChange={(v) => v && save('profiles', { role: v }, p.id)} options={Object.entries(ROLE_LABEL)} /></div>
-                  <Btn kind="ghost" className="!py-1.5" onClick={() => { const name = prompt('Full name', p.full_name || ''); if (name == null) return; const phone = prompt('WhatsApp phone in international format, e.g. +201001234567', p.phone || ''); if (phone == null) return; save('profiles', { full_name: name.trim(), phone: phone.trim() || null }, p.id); }}>Edit</Btn>
-                  {hasWorker && <Btn kind="ghost" className="!py-1.5" onClick={() => setPw({ user_id: p.id, email: p.email, password: '' })}>Password</Btn>}
-                  {p.id !== me.id && <Btn kind={p.is_active ? 'ghost' : 'ok'} className="!py-1.5" onClick={() => save('profiles', { is_active: !p.is_active }, p.id)}>{p.is_active ? 'Deactivate' : 'Activate'}</Btn>}
-                </div>
-              </div>
+            <Card key={p.id} className={`flex flex-wrap items-center justify-between gap-2 p-3 ${p.is_active ? '' : 'opacity-60'}`}>
+              <div className="min-w-0"><div className="font-medium text-slate-900">{p.full_name || '—'}</div><div className="truncate text-xs text-slate-500">{p.username ? `${p.username} · ` : ''}{p.email}{p.phone ? ` · ${p.phone}` : ''}</div></div>
+              <div className="flex items-center gap-1.5"><Badge className="bg-brand-50 text-brand-800">{ROLE_LABEL[p.role] || p.role}</Badge>{!p.is_active && <Badge className="bg-amber-100 text-amber-800">No access</Badge>}{!p.employee_id && <Badge className="bg-rose-100 text-rose-800" >No HR employee linked — KPIs not credited</Badge>}</div>
             </Card>
           ))}
-          {form && (
-            <Modal title="New user" onClose={() => setForm(null)} footer={hasWorker ? <><Btn kind="ghost" onClick={() => setForm(null)}>Cancel</Btn><Btn disabled={busy || !form.email || form.password.length < 8} onClick={create}>Create user</Btn></> : <Btn kind="ghost" onClick={() => setForm(null)}>Close</Btn>}>
-              {!hasWorker ? (
-                <ol className="list-decimal space-y-1.5 pl-5 text-sm text-slate-700">
-                  <li>The one-click form needs the worker. Set its URL in Settings → Verifier, or:</li>
-                  <li>Open Supabase → Authentication → Users → <b>Add user</b> (email + password, tick “Auto confirm”).</li>
-                  <li>Come back here and press <b>Refresh</b>. The new user appears as <b>Inactive</b>.</li>
-                  <li>Pick the role and press <b>Activate</b>.</li>
-                </ol>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Email" className="col-span-2"><input type="email" className={inputCls()} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value.trim() })} /></Field>
-                  <Field label="Full name"><input className={inputCls()} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></Field>
-                  <Field label="Role"><Select value={form.role} onChange={(v) => setForm({ ...form, role: v || 'data_entry' })} options={Object.entries(ROLE_LABEL)} /></Field>
-                  <Field label="WhatsApp phone (+20…)"><input className={inputCls()} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
-                  <Field label="Temporary password (8+)"><input type="text" autoComplete="off" className={inputCls()} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
-                </div>
-              )}
-            </Modal>
-          )}
-          {pw && (
-            <Modal title={`New password — ${pw.email}`} onClose={() => setPw(null)} footer={<><Btn kind="ghost" onClick={() => setPw(null)}>Cancel</Btn><Btn disabled={pw.password.length < 8} onClick={async () => { const r = await workerCall('/admin/users/password', { user_id: pw.user_id, password: pw.password }); if (r) { toast('Password changed'); setPw(null); } }}>Set password</Btn></>}>
-              <Field label="New password (8+ characters)"><input type="text" autoComplete="off" className={inputCls()} value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} /></Field>
-            </Modal>
-          )}
         </div>
       );
     };
@@ -179,7 +141,7 @@
       return (
         <div className="space-y-4">
           <Card className="p-4">
-            <Field label="Worker URL" hint="Shown by “wrangler deploy”, e.g. https://hv-ops-verifier.<account>.workers.dev — enables New user, Run now and recurring generation buttons.">
+            <Field label="Worker URL" hint="Shown by “wrangler deploy”, e.g. https://hv-ops-verifier.<account>.workers.dev — enables the “Run verifier now” and “Generate today’s recurring tasks” buttons.">
               <div className="flex gap-2"><input className={inputCls()} value={url} onChange={(e) => setUrl(e.target.value.trim())} placeholder="https://…workers.dev" /><Btn onClick={() => saveSetting('worker_url', url.replace(/\/+$/, ''))}>Save</Btn></div>
             </Field>
             {cfg.worker_url && <div className="mt-3"><Btn kind="soft" onClick={runNow} disabled={busy}>{busy ? 'Running…' : 'Run verifier now'}</Btn></div>}
@@ -270,18 +232,24 @@
       const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(notice || ''); const [busy, setBusy] = useState(false);
       const submit = async (e) => {
         e.preventDefault(); setBusy(true); setErr('');
-        const { error } = await sbc.auth.signInWithPassword({ email: email.trim(), password });
+        let loginEmail = email.trim();
+        if (!loginEmail.includes('@')) {          // username -> email, same resolver the other systems use
+          const { data: resolved } = await sbc.rpc('hv_login_email', { p_username: loginEmail });
+          if (!resolved) { setBusy(false); setErr('Unknown username.'); return; }
+          loginEmail = resolved;
+        }
+        const { error } = await sbc.auth.signInWithPassword({ email: loginEmail, password });
         setBusy(false); if (error) setErr(error.message);
       };
       return (
         <Shell>
           <form onSubmit={submit} className="space-y-3">
-            <Field label="Email"><input type="email" autoComplete="username" className={inputCls()} value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
+            <Field label="Username or email"><input type="text" autoCapitalize="none" autoComplete="username" className={inputCls()} value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
             <Field label="Password"><input type="password" autoComplete="current-password" className={inputCls()} value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
             {err && <p className="rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{err}</p>}
             <button type="submit" disabled={busy} className="w-full rounded-lg bg-brand-700 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">{busy ? 'Signing in…' : 'Sign in'}</button>
           </form>
-          <p className="mt-4 text-center text-xs text-slate-400">Accounts are created by the admin.</p>
+          <p className="mt-4 text-center text-xs text-slate-400">Same username and password as HR, Maintenance and the CRM.</p>
           {!hasBuiltInConfig && <button className="mt-1 w-full text-center text-xs text-slate-400 underline" onClick={onReconfigure}>Reconfigure connection</button>}
         </Shell>
       );
@@ -301,7 +269,7 @@
     async function fetchAll(table) {
       const { order, desc, max = 50000 } = TABLES[table]; const out = [];
       for (let from = 0; from < max; from += 1000) {
-        const { data, error } = await sbc.from(table).select('*').order(order, { ascending: !desc }).range(from, Math.min(from + 999, max - 1));
+        const { data, error } = await sbc.from(tbl(table)).select('*').order(order, { ascending: !desc }).range(from, Math.min(from + 999, max - 1));
         if (error) throw error;
         out.push(...data); if (data.length < 1000) break;
       }
@@ -332,7 +300,7 @@
 
       const reloadTable = useCallback(async (table) => { try { const rows = await fetchAll(table); setData((d) => ({ ...d, [table]: rows })); } catch (e) { /* keep what we have */ } }, []);
       const reloadWhere = useCallback(async (table, col, val) => {
-        const { data: rows } = await sbc.from(table).select('*').eq(col, val);
+        const { data: rows } = await sbc.from(tbl(table)).select('*').eq(col, val);
         if (rows) setData((d) => ({ ...d, [table]: [...d[table].filter((r) => r[col] !== val), ...rows] }));
       }, []);
 
@@ -341,15 +309,15 @@
         if (!uid) { setMe(null); setData(EMPTY); return; }
         (async () => {
           setLoading(true); setLoadError('');
-          const { data: prof, error } = await sbc.from('profiles').select('*').eq('id', uid).maybeSingle();
+          const { data: prof, error } = await sbc.from(tbl('profiles')).select('*').eq('id', uid).maybeSingle();
           if (error || !prof || !prof.is_active) {
-            setNotice(error ? friendlyError(error) : 'This account is not active yet. Ask the admin to activate it in Settings → Users.');
+            setNotice(error ? friendlyError(error) : 'Your login works, but HV Ops is not switched on for you. Ask HR to tick “HV Ops” on your login (HR → Users).');
             await sbc.auth.signOut(); setLoading(false); return;
           }
           try {
             const names = Object.keys(TABLES); const results = await Promise.all(names.map(fetchAll));
             setData(Object.fromEntries(names.map((n, i) => [n, results[i]]))); setMe(prof); setNotice('');
-          } catch (e) { setLoadError(`${friendlyError(e)} — were all five SQL files run on this project?`); }
+          } catch (e) { setLoadError(`${friendlyError(e)} — were the HV Ops SQL files run on the unified project?`); }
           setLoading(false);
         })();
       }, [uid]);
@@ -369,15 +337,14 @@
 
       // Every write returns the saved row (.select().single()) and local state is updated immediately.
       const save = useCallback(async (table, values, id) => {
-        const q = id ? sbc.from(table).update(values).eq('id', id) : sbc.from(table).insert(values);
+        const q = id ? sbc.from(tbl(table)).update(values).eq('id', id) : sbc.from(tbl(table)).insert(values);
         const { data: row, error } = await q.select().single();
         if (error) { toast(friendlyError(error), 'error'); return null; }
         setData((d) => ({ ...d, [table]: d[table].some((r) => r.id === row.id) ? d[table].map((r) => (r.id === row.id ? row : r)) : [row, ...d[table]] }));
-        if (table === 'profiles') setMe((m) => (m && m.id === row.id ? row : m));
         return row;
       }, [toast]);
       const saveSetting = useCallback(async (key, value) => {
-        const { data: row, error } = await sbc.from('settings').upsert({ key, value, updated_by: sessionRef.current.user.id, updated_at: new Date().toISOString() }).select().single();
+        const { data: row, error } = await sbc.from(tbl('settings')).upsert({ key, value, updated_by: sessionRef.current.user.id, updated_at: new Date().toISOString() }).select().single();
         if (error) { toast(friendlyError(error), 'error'); return null; }
         setData((d) => ({ ...d, settings: [...d.settings.filter((s) => s.key !== key), row] })); toast('Saved'); return row;
       }, [toast]);
@@ -417,6 +384,7 @@
             <aside className="no-print fixed inset-y-0 hidden w-56 flex-col bg-brand-800 p-3 md:flex">
               <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-brand-800">HV</div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
               <nav className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
+              <div className="mb-3 border-t border-white/10 pt-3"><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
               <div className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
                 <button onClick={() => sbc.auth.signOut()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-brand-100 hover:bg-white/10"><Icon name="logout" className="h-4 w-4" />Sign out</button></div>
             </aside>
@@ -450,6 +418,7 @@
                 <div className="safe-bottom w-full rounded-t-2xl bg-white p-3" onClick={(e) => e.stopPropagation()}>
                   <div className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
                   {nav.slice(4).map((n) => <button key={n[0]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
+                  <div className="my-1 border-t border-slate-100 pt-1">{HV_APPS.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
                   <button onClick={() => sbc.auth.signOut()} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-rose-700 hover:bg-rose-50"><Icon name="logout" />Sign out</button>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 -- HV OPS — 002_seed_settings.sql
--- Seeds settings + the two agencies. "on conflict do nothing" = re-running never overwrites edits made in the app.
+-- Seeds ops_settings + the two ops_agencies. "on conflict do nothing" = re-running never overwrites edits made in the app.
 
-insert into settings (key, value) values
+insert into ops_settings (key, value) values
 ('location_codes', '{
   "Al Dau Heights":"ADH","Arabia":"ARB","Cyprus":"CYP","El Ahyaa":"AHY","El Gouna":"EG",
   "El Helal":"HLL","El Kawther":"KWT","El Wafaa":"WFA","El Wozra":"WZR","Hadaba":"HD",
@@ -72,7 +72,7 @@ insert into settings (key, value) values
 ]'::jsonb)
 on conflict (key) do nothing;
 
-insert into agencies (name, display_name, contact_person, scope_notes) values
+insert into ops_agencies (name, display_name, contact_person, scope_notes) values
 ('london_marketing_studios', 'London Marketing Studios', null, 'Social media + paid ads (Meta / Google)'),
 ('izmi', 'IZMI', 'Mohamed Gheedan', 'SEO')
 on conflict (name) do nothing;

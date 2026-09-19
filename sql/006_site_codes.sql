@@ -1,6 +1,6 @@
 -- HV OPS — 006_site_codes.sql
--- Aligns the reference-code tables with the prefixes the website ALREADY uses (read from all 493 live listings on 2026-09-19),
--- so old and new listings share one convention. Only changes two settings rows; affects NEW listings only. Safe to re-run.
+-- Aligns the reference-code tables with the prefixes the website ALREADY uses (read from all 493 live ops_listings on 2026-09-19),
+-- so old and new ops_listings share one convention. Only changes two ops_settings rows; affects NEW ops_listings only. Safe to re-run.
 --
 -- Kept from the original plan because the site has no usable example: El Wozra = WZR, Makadina = MKN.
 -- Deliberate differences from the site:
@@ -8,7 +8,7 @@
 --   New El Kawther = NKW — the site mixes KW / NKW / NK; KW is El Kawther.
 --   Shop stays SH, Chalet stays C — the site has a single shop, coded C.
 
-update settings set updated_at = now(), value = '{
+update ops_settings set updated_at = now(), value = '{
   "Al Dau Heights":"DH","Arabia":"AR","Cyprus":"CY","El Ahyaa":"AH","El Gouna":"G",
   "El Helal":"HL","El Kawther":"KW","El Wafaa":"WA","El Wozra":"WZR","Hadaba":"HD",
   "Intercontinental":"IN","Jabal El Hareem":"JH","Luxor":"LX","Magawish":"MG",
@@ -20,6 +20,6 @@ update settings set updated_at = now(), value = '{
 where key = 'location_codes'
   and value ->> 'Intercontinental' = 'INT';          -- only if still the original seed (never overwrite edits made in Settings)
 
-update settings set updated_at = now(), value = jsonb_set(value, '{Studio}', '"S"')
+update ops_settings set updated_at = now(), value = jsonb_set(value, '{Studio}', '"S"')
 where key = 'unit_type_codes'
   and value ->> 'Studio' = 'ST';

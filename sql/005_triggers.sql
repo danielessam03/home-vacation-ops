@@ -1,9 +1,9 @@
 -- HV OPS — 005_triggers.sql
 -- Functions + triggers. Re-runnable (create or replace / drop trigger if exists). Touches no data.
--- BEFORE triggers on listings fire in name order: trg_a_refcode -> trg_b_completeness -> trg_c_guard.
+-- BEFORE triggers on ops_listings fire in name order: trg_a_refcode -> trg_b_completeness -> trg_c_guard.
 
 -- ---------------------------------------------------------------- 1. reference code  LOC-TYPE-SERIAL-S|R
-create or replace function fn_generate_reference_code() returns trigger
+create or replace function ops_fn_generate_reference_code() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
   loc_code text; type_code text; n bigint; mx bigint; candidate text;
@@ -13,40 +13,40 @@ begin
     return new;
   end if;
 
-  select value ->> new.location      into loc_code  from settings where key = 'location_codes';
-  select value ->> new.property_type into type_code from settings where key = 'unit_type_codes';
+  select value ->> new.location      into loc_code  from ops_settings where key = 'location_codes';
+  select value ->> new.property_type into type_code from ops_settings where key = 'unit_type_codes';
   if loc_code  is null then raise exception 'No location code for "%". Add it in Settings > Location codes.', new.location; end if;
   if type_code is null then raise exception 'No unit type code for "%". Add it in Settings > Unit type codes.', new.property_type; end if;
 
   -- never hand out a serial the website already uses
   select max((regexp_match(reference_code, '-(\d+)-[SR]$'))[1]::bigint) into mx
-  from (select reference_code from wp_listing_index union all select reference_code from listings) r
+  from (select reference_code from ops_wp_listing_index union all select reference_code from ops_listings) r
   where reference_code ~ '-\d+-[SR]$';
 
   loop
-    n := nextval('listing_ref_seq');
+    n := nextval('ops_listing_ref_seq');
     if mx is not null and n <= mx then
-      perform setval('listing_ref_seq', mx + 1, false);
-      n := nextval('listing_ref_seq');
+      perform setval('ops_listing_ref_seq', mx + 1, false);
+      n := nextval('ops_listing_ref_seq');
     end if;
     candidate := upper(loc_code || '-' || type_code || '-' || n || '-' || case when new.deal_type = 'rent' then 'R' else 'S' end);
-    exit when not exists (select 1 from listings where reference_code = candidate);
+    exit when not exists (select 1 from ops_listings where reference_code = candidate);
   end loop;
   new.reference_code := candidate;
   return new;
 end $$;
 
-drop trigger if exists trg_a_refcode on listings;
-create trigger trg_a_refcode before insert on listings for each row execute function fn_generate_reference_code();
+drop trigger if exists trg_a_refcode on ops_listings;
+create trigger trg_a_refcode before insert on ops_listings for each row execute function ops_fn_generate_reference_code();
 
 -- ---------------------------------------------------------------- 2. completeness
-create or replace function fn_calc_completeness() returns trigger
+create or replace function ops_fn_calc_completeness() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
   req jsonb; row_j jsonb := to_jsonb(new); f text; v jsonb;
   total int := 0; filled int := 0; missing text[] := '{}';
 begin
-  select value into req from settings where key = 'required_fields';
+  select value into req from ops_settings where key = 'required_fields';
   if req is null or jsonb_typeof(req) <> 'array' then return new; end if;
 
   for f in select jsonb_array_elements_text(req) loop
@@ -67,14 +67,14 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_b_completeness on listings;
-create trigger trg_b_completeness before insert or update on listings for each row execute function fn_calc_completeness();
+drop trigger if exists trg_b_completeness on ops_listings;
+create trigger trg_b_completeness before insert or update on ops_listings for each row execute function ops_fn_calc_completeness();
 
 -- ---------------------------------------------------------------- 2b. listing guard (rules RLS cannot express)
 -- auth.uid() is NULL for the service role (the verifier worker) and the SQL editor.
-create or replace function fn_listing_guard() returns trigger
+create or replace function ops_fn_listing_guard() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare r user_role := public.my_role(); is_user boolean := auth.uid() is not null;
+declare r ops_user_role := public.ops_my_role(); is_user boolean := auth.uid() is not null;
 begin
   new.updated_at := now();
   if new.currency is not null then new.currency := upper(new.currency); end if;
@@ -135,29 +135,29 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_c_guard on listings;
-create trigger trg_c_guard before insert or update on listings for each row execute function fn_listing_guard();
+drop trigger if exists trg_c_guard on ops_listings;
+create trigger trg_c_guard before insert or update on ops_listings for each row execute function ops_fn_listing_guard();
 
 -- ---------------------------------------------------------------- 4. default channels
-create or replace function fn_default_channels() returns trigger
+create or replace function ops_fn_default_channels() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare chans jsonb; c text;
 begin
-  select value into chans from settings where key = 'default_channels';
+  select value into chans from ops_settings where key = 'default_channels';
   if chans is null or jsonb_typeof(chans) <> 'array' then chans := '["website","property_finder","aqarmap"]'::jsonb; end if;
   for c in select jsonb_array_elements_text(chans) loop
     begin
-      insert into listing_channels (listing_id, channel) values (new.id, c::channel_name) on conflict do nothing;
-    exception when invalid_text_representation then null;   -- unknown portal name in settings: skip it
+      insert into ops_listing_channels (listing_id, channel) values (new.id, c::ops_channel_name) on conflict do nothing;
+    exception when invalid_text_representation then null;   -- unknown portal name in ops_settings: skip it
     end;
   end loop;
   return new;
 end $$;
 
-drop trigger if exists trg_default_channels on listings;
-create trigger trg_default_channels after insert on listings for each row execute function fn_default_channels();
+drop trigger if exists trg_default_channels on ops_listings;
+create trigger trg_default_channels after insert on ops_listings for each row execute function ops_fn_default_channels();
 
-create or replace function fn_channel_touch() returns trigger
+create or replace function ops_fn_channel_touch() returns trigger
 language plpgsql as $$
 begin
   new.updated_at := now();
@@ -166,13 +166,13 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_channel_touch on listing_channels;
-create trigger trg_channel_touch before insert or update on listing_channels for each row execute function fn_channel_touch();
+drop trigger if exists trg_channel_touch on ops_listing_channels;
+create trigger trg_channel_touch before insert or update on ops_listing_channels for each row execute function ops_fn_channel_touch();
 
--- ---------------------------------------------------------------- tasks guard: timestamps + manager-only approval
-create or replace function fn_task_guard() returns trigger
+-- ---------------------------------------------------------------- ops_tasks guard: timestamps + manager-only approval
+create or replace function ops_fn_task_guard() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare r user_role := public.my_role(); is_user boolean := auth.uid() is not null;
+declare r ops_user_role := public.ops_my_role(); is_user boolean := auth.uid() is not null;
 begin
   new.updated_at := now();
   if tg_op = 'INSERT' then
@@ -203,13 +203,13 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_task_guard on tasks;
-create trigger trg_task_guard before insert or update on tasks for each row execute function fn_task_guard();
+drop trigger if exists trg_task_guard on ops_tasks;
+create trigger trg_task_guard before insert or update on ops_tasks for each row execute function ops_fn_task_guard();
 
 -- ---------------------------------------------------------------- deliverables guard: approval is manager-only
-create or replace function fn_deliverable_guard() returns trigger
+create or replace function ops_fn_deliverable_guard() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare r user_role := public.my_role(); is_user boolean := auth.uid() is not null;
+declare r ops_user_role := public.ops_my_role(); is_user boolean := auth.uid() is not null;
 begin
   if tg_op = 'INSERT' and new.logged_by is null then new.logged_by := auth.uid(); end if;
   if is_user and r not in ('admin','manager') then
@@ -225,16 +225,16 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_deliverable_guard on agency_deliverables;
-create trigger trg_deliverable_guard before insert or update on agency_deliverables for each row execute function fn_deliverable_guard();
+drop trigger if exists trg_deliverable_guard on ops_agency_deliverables;
+create trigger trg_deliverable_guard before insert or update on ops_agency_deliverables for each row execute function ops_fn_deliverable_guard();
 
 -- ---------------------------------------------------------------- 3. generic audit trigger (one row per changed field)
-create or replace function fn_audit() returns trigger
+create or replace function ops_fn_audit() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare o jsonb; n jsonb := to_jsonb(new); k text; act text; rid uuid := (to_jsonb(new) ->> 'id')::uuid;
 begin
   if tg_op = 'INSERT' then
-    insert into audit_log (table_name, record_id, action, new_value, changed_by)
+    insert into ops_audit_log (table_name, record_id, action, new_value, changed_by)
     values (tg_table_name, rid, 'insert', left(n::text, 4000), auth.uid());
     return new;
   end if;
@@ -245,7 +245,7 @@ begin
     if (o -> k) is distinct from (n -> k) then
       act := case when (k = 'status' and n ->> k = 'archived') or (k = 'is_active' and n ->> k = 'false')
                   then 'delete_soft' else 'update' end;
-      insert into audit_log (table_name, record_id, action, field_name, old_value, new_value, changed_by)
+      insert into ops_audit_log (table_name, record_id, action, field_name, old_value, new_value, changed_by)
       values (tg_table_name, rid, act, k, left(o ->> k, 4000), left(n ->> k, 4000), auth.uid());
     end if;
   end loop;
@@ -255,29 +255,9 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['listings','listing_channels','tasks','agency_deliverables','agency_metrics','profiles','settings','kpi_targets','agencies']
+  foreach t in array array['ops_listings','ops_listing_channels','ops_tasks','ops_agency_deliverables','ops_agency_metrics','ops_settings','ops_kpi_targets','ops_agencies']
   loop
     execute format('drop trigger if exists trg_audit on %I', t);
-    execute format('create trigger trg_audit after insert or update on %I for each row execute function fn_audit()', t);
+    execute format('create trigger trg_audit after insert or update on %I for each row execute function ops_fn_audit()', t);
   end loop;
 end $$;
-
--- ---------------------------------------------------------------- new auth user => inactive profile row
-create or replace function public.fn_handle_new_user() returns trigger
-language plpgsql security definer set search_path = public as $$
-begin
-  begin
-    -- Created INACTIVE with the lowest role: an admin must activate the user and pick the role in Settings.
-    -- (User metadata is never trusted for the role — anyone can write their own metadata.)
-    insert into public.profiles (id, email, full_name, role, is_active)
-    values (new.id, new.email,
-            coalesce(new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1)),
-            'data_entry', false)
-    on conflict (id) do nothing;
-  exception when others then null;   -- never block a sign-up because of the profile row
-  end;
-  return new;
-end $$;
-
-drop trigger if exists trg_hv_new_user on auth.users;
-create trigger trg_hv_new_user after insert on auth.users for each row execute function public.fn_handle_new_user();

@@ -40,7 +40,7 @@
       const saveAll = async () => {
         setBusy(true);
         const rows = defs.filter((d) => vals[d.key] !== undefined && vals[d.key] !== '').map((d) => ({ agency_id: agency.id, period_month: month, metric_key: d.key, metric_value: Number(vals[d.key]), unit: d.unit, entered_by: me.id, source: 'manual' }));
-        const { data: saved, error } = await sbc.from('agency_metrics').upsert(rows, { onConflict: 'agency_id,period_month,metric_key' }).select();
+        const { data: saved, error } = await sbc.from(tbl('agency_metrics')).upsert(rows, { onConflict: 'agency_id,period_month,metric_key' }).select();
         setBusy(false);
         if (error) { toast(friendlyError(error), 'error'); return; }
         setData((d) => ({ ...d, agency_metrics: [...d.agency_metrics.filter((m) => !saved.some((s) => s.id === m.id)), ...saved] }));
@@ -156,7 +156,7 @@
       const submit = async () => {
         const rows = defs.filter((d) => vals[d.key] !== '').map((d) => ({ subject_type: 'user', subject_id: user.id, period_month: month, metric_key: d.key, target_value: Number(vals[d.key]), created_by: me.id }));
         if (!rows.length) { onClose(); return; }
-        const { data: saved, error } = await sbc.from('kpi_targets').upsert(rows, { onConflict: 'subject_type,subject_id,period_month,metric_key' }).select();
+        const { data: saved, error } = await sbc.from(tbl('kpi_targets')).upsert(rows, { onConflict: 'subject_type,subject_id,period_month,metric_key' }).select();
         if (error) { toast(friendlyError(error), 'error'); return; }
         setData((d) => ({ ...d, kpi_targets: [...d.kpi_targets.filter((t) => !saved.some((s) => s.id === t.id)), ...saved] }));
         toast('Targets saved'); onClose();

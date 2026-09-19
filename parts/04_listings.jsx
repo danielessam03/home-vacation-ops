@@ -230,7 +230,7 @@
       useEffect(() => {
         if (!mgr || !l) return;
         const ids = [id, ...channels.map((c) => c.id)];
-        sbc.from('audit_log').select('*').in('record_id', ids).order('changed_at', { ascending: false }).limit(300).then(({ data: rows }) => setAudit(rows || []));
+        sbc.from(tbl('audit_log')).select('*').in('record_id', ids).order('changed_at', { ascending: false }).limit(300).then(({ data: rows }) => setAudit(rows || []));
       }, [id, l && l.updated_at, channels.length]);
       if (!l) return <Empty>Listing not found.</Empty>;
       const s = slaOf(l, cfg.sla_hours, now);
@@ -418,10 +418,10 @@
         setBusy(true); const created = []; const failed = [];
         for (let i = 0; i < good.length; i += 25) {
           const chunk = good.slice(i, i + 25); const payload = chunk.map((p) => ({ ...p.o, entered_by: me.id, assigned_to: me.id }));
-          const { data: rows, error } = await sbc.from('listings').insert(payload).select();
+          const { data: rows, error } = await sbc.from(tbl('listings')).insert(payload).select();
           if (!error) { created.push(...rows); continue; }
           for (const p of chunk) {        // one bad row must not sink the batch
-            const { data: row, error: e2 } = await sbc.from('listings').insert({ ...p.o, entered_by: me.id, assigned_to: me.id }).select().single();
+            const { data: row, error: e2 } = await sbc.from(tbl('listings')).insert({ ...p.o, entered_by: me.id, assigned_to: me.id }).select().single();
             if (e2) failed.push({ line: p.line, error: friendlyError(e2) }); else created.push(row);
           }
         }

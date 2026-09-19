@@ -1,7 +1,7 @@
 // HV OPS — Cloudflare Worker
 //   cron "0 * * * *"   hourly  : website verifier + SLA / overdue alerts (+ WhatsApp when enabled)
 //   cron "0 22 * * *"  nightly : recurring-task generation (00:00 / 01:00 Cairo)
-//   HTTP                       : POST /run, POST /admin/users, POST /admin/users/password, GET /health
+//   HTTP                       : POST /run, POST /run-recurring, GET /health   (logins are managed in HR, not here)
 //
 // Secrets (wrangler secret put ...): SUPABASE_URL, SUPABASE_SERVICE_KEY
 // Vars (wrangler.toml): WP_BASE_URL, WP_CPT, MAX_PAGE_FETCHES, WHATSAPP_ENABLED
@@ -49,14 +49,6 @@ export default {
         if (!['admin', 'manager'].includes(caller.role)) return json({ error: 'Managers only' }, 403);
         return json(await generateRecurringTasks(env));
       }
-      if (path === '/admin/users') {
-        if (caller.role !== 'admin') return json({ error: 'Admins only' }, 403);
-        return json(await createUser(env, await request.json()));
-      }
-      if (path === '/admin/users/password') {
-        if (caller.role !== 'admin') return json({ error: 'Admins only' }, 403);
-        return json(await setPassword(env, await request.json()));
-      }
       return json({ error: 'Not found' }, 404);
     } catch (e) {
       return json({ error: String(e.message || e) }, 400);
@@ -93,6 +85,9 @@ async function sbAll(env, path) {
   return out;
 }
 
+// same rule as public.ops_role_of() in the database
+const opsRole = (u) => u.ops_role || (u.role === 'ceo' ? 'admin' : 'data_entry');
+
 async function authCaller(request, env) {
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!token) return null;
@@ -101,47 +96,8 @@ async function authCaller(request, env) {
   });
   if (!res.ok) return null;
   const user = await res.json();
-  const rows = await sb(env, `profiles?id=eq.${user.id}&is_active=eq.true&select=id,role`);
-  return rows[0] || null;
-}
-
-// =====================================================================================
-// Admin: users (the app has no public sign-up; admins create users from Settings)
-// =====================================================================================
-const ROLES = ['admin', 'manager', 'data_entry', 'marketing'];
-
-async function authAdmin(env, path, method, body) {
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/${path}`, {
-    method,
-    headers: {
-      apikey: env.SUPABASE_SERVICE_KEY,
-      authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.msg || data.message || data.error_description || `Auth error ${res.status}`);
-  return data;
-}
-
-async function createUser(env, { email, password, full_name, role, phone }) {
-  if (!email || !password) throw new Error('Email and password are required');
-  if (String(password).length < 8) throw new Error('Password must be at least 8 characters');
-  if (!ROLES.includes(role)) throw new Error('Unknown role');
-  const user = await authAdmin(env, 'users', 'POST', { email, password, email_confirm: true, user_metadata: { full_name } });
-  const rows = await sb(env, 'profiles?on_conflict=id', {
-    method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=representation',
-    body: { id: user.id, email, full_name: full_name || email.split('@')[0], role, phone: phone || null, is_active: true },
-  });
-  return { profile: rows[0] };
-}
-
-async function setPassword(env, { user_id, password }) {
-  if (!user_id || !password || String(password).length < 8) throw new Error('user_id and a password of 8+ characters are required');
-  await authAdmin(env, `users/${user_id}`, 'PUT', { password });
-  return { ok: true };
+  const rows = await sb(env, `app_users?id=eq.${user.id}&is_active=eq.true&access_ops=eq.true&select=id,role,ops_role`);
+  return rows[0] ? { id: rows[0].id, role: opsRole(rows[0]) } : null;
 }
 
 // =====================================================================================
@@ -245,7 +201,7 @@ export async function runVerifier(env) {
     refs_found: 0, listings_verified: 0, alerts_created: 0, pending_pages: 0, error: null };
   const errors = [];
   try {
-    const knownRows = await sbAll(env, 'wp_crawl_log?select=url,wp_modified_at,reference_code');
+    const knownRows = await sbAll(env, 'ops_wp_crawl_log?select=url,wp_modified_at,reference_code');
     const known = new Map(knownRows.map((r) => [r.url, r]));
 
     let pages = null;
@@ -297,10 +253,10 @@ export async function runVerifier(env) {
     if (indexRows.length) {
       // de-duplicate within the batch, then keep the FIRST sighting forever (ignore-duplicates)
       const uniq = [...new Map(indexRows.map((r) => [r.reference_code, r])).values()];
-      await sb(env, 'wp_listing_index?on_conflict=reference_code', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: uniq });
+      await sb(env, 'ops_wp_listing_index?on_conflict=reference_code', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: uniq });
     }
     if (crawlRows.length) {
-      await sb(env, 'wp_crawl_log?on_conflict=url', { method: 'POST', prefer: 'resolution=merge-duplicates', body: crawlRows });
+      await sb(env, 'ops_wp_crawl_log?on_conflict=url', { method: 'POST', prefer: 'resolution=merge-duplicates', body: crawlRows });
     }
 
     run.listings_verified = await matchListings(env);
@@ -310,20 +266,20 @@ export async function runVerifier(env) {
   }
   run.error = errors.length ? errors.join(' | ').slice(0, 1500) : null;
   run.finished_at = new Date().toISOString();
-  try { await sb(env, 'verifier_runs', { method: 'POST', body: run }); } catch (e) { /* logging must never throw */ }
+  try { await sb(env, 'ops_verifier_runs', { method: 'POST', body: run }); } catch (e) { /* logging must never throw */ }
   return run;
 }
 
 // A listing is verified_live when its reference code appears in wp_listing_index.
 async function matchListings(env) {
-  const open = await sbAll(env, 'listings?select=id,reference_code,entered_by,assigned_to&date_published_verified=is.null&status=not.in.(rejected,archived)');
+  const open = await sbAll(env, 'ops_listings?select=id,reference_code,entered_by,assigned_to&date_published_verified=is.null&status=not.in.(rejected,archived)');
   if (!open.length) return 0;
   let verified = 0;
   const alerts = [];
   for (let i = 0; i < open.length; i += 80) {
     const chunk = open.slice(i, i + 80);
     const refs = chunk.map((l) => `"${l.reference_code.replace(/[^A-Z0-9-]/gi, '')}"`).join(',');
-    const found = await sb(env, `wp_listing_index?select=reference_code,url,wp_published_at,first_seen_at&reference_code=in.(${refs})`);
+    const found = await sb(env, `ops_wp_listing_index?select=reference_code,url,wp_published_at,first_seen_at&reference_code=in.(${refs})`);
     const byRef = new Map(found.map((f) => [f.reference_code, f]));
     for (const l of chunk) {
       const hit = byRef.get(l.reference_code);
@@ -331,16 +287,16 @@ async function matchListings(env) {
       // earliest of WordPress publish date and first sighting — never later than first_seen
       const times = [hit.wp_published_at, hit.first_seen_at].filter(Boolean).map((t) => new Date(t).getTime());
       const verifiedAt = new Date(Math.min(...times)).toISOString();
-      await sb(env, `listings?id=eq.${l.id}`, { method: 'PATCH',
+      await sb(env, `ops_listings?id=eq.${l.id}`, { method: 'PATCH',
         body: { status: 'verified_live', date_published_verified: verifiedAt, website_url: hit.url } });
-      await sb(env, 'listing_channels?on_conflict=listing_id,channel', { method: 'POST', prefer: 'resolution=merge-duplicates',
+      await sb(env, 'ops_listing_channels?on_conflict=listing_id,channel', { method: 'POST', prefer: 'resolution=merge-duplicates',
         body: { listing_id: l.id, channel: 'website', status: 'published', url: hit.url, published_at: verifiedAt } });
       alerts.push({ level: 'info', title: `${l.reference_code} verified live`, body: hit.url, entity_type: 'listing',
         entity_id: l.id, target_user: l.assigned_to || l.entered_by, dedupe_key: `verified:${l.id}` });
       verified++;
     }
   }
-  if (alerts.length) await sb(env, 'alerts?on_conflict=dedupe_key', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: alerts });
+  if (alerts.length) await sb(env, 'ops_alerts?on_conflict=dedupe_key', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: alerts });
   return verified;
 }
 
@@ -349,11 +305,11 @@ async function matchListings(env) {
 // =====================================================================================
 async function raiseAlerts(env) {
   const alerts = [];
-  const settings = await sb(env, 'settings?key=eq.sla_hours&select=value');
+  const settings = await sb(env, 'ops_settings?key=eq.sla_hours&select=value');
   const cfg = { warn: 48, breach: 72, incomplete_alert: 24, ...(settings[0] ? settings[0].value : {}) };
   const now = Date.now();
 
-  const rows = await sbAll(env, 'vw_listing_sla?select=id,reference_code,title,status,entered_by,assigned_to,created_at,'
+  const rows = await sbAll(env, 'ops_vw_listing_sla?select=id,reference_code,title,status,entered_by,assigned_to,created_at,'
     + 'completeness_pct,missing_fields,hours_elapsed,sla_state,claimed_not_found'
     + '&date_published_verified=is.null&status=not.in.(rejected,archived,on_hold)');
   for (const l of rows) {
@@ -385,7 +341,7 @@ async function raiseAlerts(env) {
   }
 
   const nowIso = new Date().toISOString();
-  const tasks = await sbAll(env, `tasks?select=id,title,assigned_to,due_at&status=in.(todo,doing)&due_at=lt.${nowIso}`);
+  const tasks = await sbAll(env, `ops_tasks?select=id,title,assigned_to,due_at&status=in.(todo,doing)&due_at=lt.${nowIso}`);
   for (const t of tasks) {
     const a = { level: 'warning', title: `Task overdue — ${t.title}`, body: `Was due ${t.due_at}`, entity_type: 'task', entity_id: t.id };
     if (t.assigned_to) alerts.push({ ...a, target_user: t.assigned_to, dedupe_key: `taskdue:${t.id}:u` });
@@ -393,13 +349,13 @@ async function raiseAlerts(env) {
   }
 
   const today = nowIso.slice(0, 10);
-  const late = await sbAll(env, `agency_deliverables?select=id,item_type,planned_qty,delivered_qty,due_date,agency_id,agencies(display_name)`
+  const late = await sbAll(env, `ops_agency_deliverables?select=id,item_type,planned_qty,delivered_qty,due_date,agency_id,ops_agencies(display_name)`
     + `&status=in.(planned,revision_requested)&due_date=lt.${today}`);
   for (const d of late) {
     if (d.delivered_qty >= d.planned_qty) continue;
-    await sb(env, `agency_deliverables?id=eq.${d.id}`, { method: 'PATCH', body: { status: 'late' } });
+    await sb(env, `ops_agency_deliverables?id=eq.${d.id}`, { method: 'PATCH', body: { status: 'late' } });
     const a = { level: 'warning', entity_type: 'agency_deliverable', entity_id: d.id,
-      title: `${d.agencies ? d.agencies.display_name : 'Agency'}: ${d.item_type} past due`,
+      title: `${d.ops_agencies ? d.ops_agencies.display_name : 'Agency'}: ${d.item_type} past due`,
       body: `${d.delivered_qty}/${d.planned_qty} delivered, was due ${d.due_date}` };
     alerts.push({ ...a, target_role: 'manager', dedupe_key: `deliv:${d.id}:m` });
     alerts.push({ ...a, target_role: 'marketing', dedupe_key: `deliv:${d.id}:mk` });
@@ -408,7 +364,7 @@ async function raiseAlerts(env) {
   if (!alerts.length) return 0;
   let created = [];
   for (let i = 0; i < alerts.length; i += 200) {
-    const rowsIn = await sb(env, 'alerts?on_conflict=dedupe_key', { method: 'POST',
+    const rowsIn = await sb(env, 'ops_alerts?on_conflict=dedupe_key', { method: 'POST',
       prefer: 'resolution=ignore-duplicates,return=representation', body: alerts.slice(i, i + 200) });
     created = created.concat(rowsIn || []);
   }
@@ -440,7 +396,7 @@ export async function sendWhatsApp(env, phone, template, vars) {
 
 async function pushWhatsApp(env, criticalAlerts) {
   if (env.WHATSAPP_ENABLED !== 'true' || !criticalAlerts.length) return;
-  const people = await sb(env, 'profiles?select=id,role,phone&is_active=eq.true&phone=not.is.null');
+  const people = (await sb(env, 'app_users?select=id,role,ops_role,phone&is_active=eq.true&access_ops=eq.true&phone=not.is.null')).map((u) => ({ id: u.id, phone: u.phone, role: opsRole(u) }));
   let budget = 10;                                   // keep well inside the per-run subrequest limit
   for (const a of criticalAlerts) {
     const targets = people.filter((p) => (a.target_user && p.id === a.target_user) || (a.target_role && p.role === a.target_role));
@@ -449,7 +405,7 @@ async function pushWhatsApp(env, criticalAlerts) {
       if (budget-- <= 0) return;
       try { await sendWhatsApp(env, p.phone, 'hv_ops_alert', [a.title, a.body || '-']); ok = true; } catch (e) { /* try next run */ }
     }
-    if (ok) await sb(env, `alerts?id=eq.${a.id}`, { method: 'PATCH', body: { whatsapp_sent: true } });
+    if (ok) await sb(env, `ops_alerts?id=eq.${a.id}`, { method: 'PATCH', body: { whatsapp_sent: true } });
   }
 }
 
@@ -477,7 +433,7 @@ export async function generateRecurringTasks(env) {
   const dom = +p.day;
   const lastDom = new Date(Date.UTC(+p.year, +p.month, 0)).getUTCDate();
 
-  const templates = await sb(env, 'recurring_templates?is_active=eq.true&select=*');
+  const templates = await sb(env, 'ops_recurring_templates?is_active=eq.true&select=*');
   const due = templates.filter((t) =>
     t.frequency === 'daily'
     || (t.frequency === 'weekly' && t.weekday === weekday)
@@ -491,7 +447,7 @@ export async function generateRecurringTasks(env) {
   let created = [];
   if (rows.length) {
     // the unique index (recurring_template_id, recurring_for_date) makes a second run the same day a no-op
-    created = await sb(env, 'tasks?on_conflict=recurring_template_id,recurring_for_date', { method: 'POST',
+    created = await sb(env, 'ops_tasks?on_conflict=recurring_template_id,recurring_for_date', { method: 'POST',
       prefer: 'resolution=ignore-duplicates,return=representation', body: rows }) || [];
   }
   return { date: dateStr, templates_due: due.length, tasks_created: created.length };

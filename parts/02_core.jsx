@@ -3,9 +3,15 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.0.0';
-    const SUPABASE_URL = 'https://bwmcdspfgiaodeiplppc.supabase.co';            // https://xxxx.supabase.co  (NEW HV Ops project)
-    const SUPABASE_ANON_KEY = 'sb_publishable_LnJ6MVXIoJI5VfAEyFzEtA_Y5y_jqve';  // anon / publishable key — safe here, RLS protects the data
+    const APP_VERSION = 'v1.1.0';
+    // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
+    const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
+    const tbl = (t) => 'ops_' + t;          // every HV Ops table is prefixed ops_ inside the shared database
+    const HV_APPS = [
+      ['HR & Payroll', 'https://home-vacation-hr.pages.dev'], ['Maintenance', 'https://hv-maintenance-system.pages.dev'],
+      ['Property management (CRM)', 'https://property-management-crm.pages.dev'],
+    ];
 
     const hasBuiltInConfig = /^https:\/\//.test(SUPABASE_URL);
     let sbc = null;

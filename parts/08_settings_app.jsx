@@ -206,7 +206,7 @@
     const Shell = ({ children }) => (
       <div className="flex min-h-screen flex-col items-center justify-center bg-brand-800 p-4">
         <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-          <div className="mb-5 text-center"><div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-800 text-xl font-black text-white">HV</div><h1 className="text-lg font-bold text-slate-900">HV Ops</h1><p className="text-xs text-slate-500">Home &amp; Vacation · Operations</p></div>
+          <div className="mb-5 text-center"><img src={LOGO_LOCKUP} alt="Home Vacation — Investment for Real Estate" className="mx-auto mb-3 h-16 w-auto max-w-full object-contain" /><h1 className="text-lg font-bold text-slate-900">HV Ops</h1><p className="text-xs text-slate-500">Marketing &amp; data entry operations</p></div>
           {children}
         </div>
         <p className="mt-4 text-xs text-brand-200">HV Ops {APP_VERSION}</p>
@@ -382,7 +382,7 @@
           <div className="min-h-screen md:flex">
             {/* desktop sidebar */}
             <aside className="no-print fixed inset-y-0 hidden w-56 flex-col bg-brand-800 p-3 md:flex">
-              <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-brand-800">HV</div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
+              <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-1"><img src={LOGO_MARK} alt="Home Vacation" className="h-full w-full object-contain" /></div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
               <nav className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
               <div className="mb-3 border-t border-white/10 pt-3"><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
               <div className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
@@ -391,6 +391,7 @@
 
             <main className="w-full px-3 pb-24 pt-3 md:ml-56 md:px-6 md:pb-8 md:pt-5">
               <div className="mx-auto max-w-6xl">
+                <div className="no-print mb-3 flex items-center gap-2 md:hidden"><img src={LOGO_MARK} alt="Home Vacation" className="h-8 w-8 object-contain" /><span className="text-sm font-bold text-brand-800">HV Ops</span><span className="ml-auto text-[11px] text-slate-400">{APP_VERSION}</span></div>
                 {critical.length > 0 && page !== 'alerts' && (
                   <button onClick={() => go('alerts')} className="no-print mb-3 flex w-full items-center justify-between gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-left text-sm font-semibold text-white shadow">
                     <span className="truncate">{critical.length} critical alert{critical.length === 1 ? '' : 's'} — {critical[0].title}</span><span className="whitespace-nowrap underline">View</span>

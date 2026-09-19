@@ -140,7 +140,7 @@
       const [bTitle, bCols] = BREAKDOWNS[by];
       return (
         <div className="space-y-4">
-          <div className="hidden print:block"><h1 className="text-xl font-bold">Home &amp; Vacation — HV Ops {report.label} report</h1><p className="text-sm">{report.from} → {report.to} · generated {fmtDateTime(report.generated_at)}</p></div>
+          <div className="hidden print:block"><img src={LOGO_LOCKUP} alt="Home Vacation" className="mb-2 h-12 w-auto" /><h1 className="text-xl font-bold">Home &amp; Vacation — HV Ops {report.label} report</h1><p className="text-sm">{report.from} → {report.to} · generated {fmtDateTime(report.generated_at)}</p></div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             <Tile label="Listings entered" value={s.entered} /><Tile label="Verified live" value={s.verified} /><Tile label="Open breaches" value={s.breaches_open} tone={s.breaches_open ? 'red' : null} />
             <Tile label="Open incomplete" value={s.incomplete_open} /><Tile label="Claimed, not found" value={s.claimed_not_found} tone={s.claimed_not_found ? 'red' : null} /><Tile label="Tasks done / due" value={`${s.tasks_completed} / ${s.tasks_due}`} />

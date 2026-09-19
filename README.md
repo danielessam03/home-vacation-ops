@@ -28,27 +28,176 @@ sql/005_triggers.sql    reference code, completeness, guards, audit log, default
 Edit the files in `parts/`, run `sh build.sh`, commit both. **All SQL is additive** — no DROP TABLE / DROP COLUMN / TRUNCATE.
 Every future schema change is a new numbered file (`006_…sql`). Files 001–005 are safe to re-run.
 
-## Deploy
+## Live (set up 2026-09-19)
 
-1. **Supabase** — create a new project, region EU (Frankfurt). In Authentication → Sign In / Providers turn **off** "Allow new users to sign up".
-2. **SQL** — run `sql/001` → `005` in order in the SQL editor. (004 drops and recreates *policies* only; the "destructive" warning is safe.)
-3. **Admin user** — Authentication → Users → Add user (auto-confirm). A profile row is created automatically but inactive. Then run:
-   ```sql
-   update profiles set role = 'admin', is_active = true, full_name = 'Daniel Essam' where email = 'YOUR_EMAIL';
-   ```
-4. **Keys** — put the project URL + anon key into `parts/02_core.jsx` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`), run `sh build.sh`.
-   (If left as placeholders the app shows a "Connect" screen and keeps the values in the browser instead.)
-5. **Pages** — push to GitHub `danielessam03/home-vacation-ops`, connect Cloudflare Pages: production branch `main`, build command empty, output dir `/`.
-6. **Worker** —
-   ```bash
-   cd worker
-   npx wrangler deploy
-   npx wrangler secret put SUPABASE_URL
-   npx wrangler secret put SUPABASE_SERVICE_KEY
-   ```
-   The **service role key lives only here**, never in `index.html`. Then paste the worker URL into the app: Settings → Verifier → Worker URL.
-   That switches on: New user form, password reset, "Run verifier now", "Generate today's recurring tasks".
-7. Confirm the version in the login footer matches the commit.
+| What | Where |
+|---|---|
+| App | https://home-vacation-ops.pages.dev (Cloudflare Pages project , direct upload) |
+| Worker | https://hv-ops-verifier.homevacation1950.workers.dev (crons: hourly + 22:00 UTC) |
+| Supabase | project  (home-vacation-ops, Frankfurt). Public sign-up is OFF. Legacy anon/service_role keys are DISABLED — the app uses the publishable key, the worker uses the secret key . |
+| Secrets on this PC |  — deliberately OUTSIDE the repo folder |
+
+### Release a new version
+1. Edit , bump  in .
+2.  — builds index.html and uploads ONLY that file to Pages. Then  + .
+3. Check the version in the login footer.
+
+**Never run  or  from the repo root.** Wrangler then publishes the whole folder
+(including git-ignored files) as public assets. This happened once during setup; the keys that were exposed were revoked the same minute.
+
+Worker changes: 
+╭─────────────────────────────────╮
+│ Did you mean "wrangler deploy"? │
+╰─────────────────────────────────╯
+
+wrangler
+
+COMMANDS
+  wrangler docs [search..]        📚 Open Wrangler's command documentation in your browser
+  wrangler complete [shell]       ⌨️ Generate and handle shell completions
+
+  wrangler email                  Manage Cloudflare Email services [open beta]
+
+ACCOUNT
+  wrangler auth                   🔐 Manage authentication
+  wrangler login                  🔓 Login to Cloudflare
+  wrangler logout                 🚪 Logout from Cloudflare
+  wrangler whoami                 🕵️ Retrieve your user information
+
+COMPUTE & AI
+  wrangler agent-memory           🧠 Manage Agent Memory namespaces [private beta]
+  wrangler ai                     🤖 Manage AI models
+  wrangler ai-search              🔍 Manage AI Search instances [open beta]
+  wrangler browser                🌐 Manage Browser Run sessions [open beta]
+  wrangler containers             📦 Manage Containers
+  wrangler delete [name]          🗑️ Delete a Worker from Cloudflare
+  wrangler deploy [path]          🆙 Deploy a Worker to Cloudflare
+  wrangler deployments            🚢 List and view the current and past deployments for your Worker
+  wrangler dev [script]           👂 Start a local server for developing your Worker
+  wrangler dispatch-namespace     🏗️ Manage dispatch namespaces
+  wrangler flagship               🚩 Manage Flagship apps and feature flags [open beta]
+  wrangler init [name]            📥 Initialize a basic Worker
+  wrangler pages                  ⚡️ Configure Cloudflare Pages
+  wrangler preview [script]       👀 Create a Preview deployment of the current Worker [open beta]
+  wrangler queues                 📬 Manage Workers Queues
+  wrangler rollback [version-id]  🔙 Rollback a deployment for a Worker
+  wrangler secret                 🤫 Generate a secret that can be referenced in a Worker
+  wrangler setup                  🪄 Setup a project to work on Cloudflare
+  wrangler tail [worker]          🦚 Start a log tailing session for a Worker
+  wrangler triggers               🎯 Updates the triggers of your current deployment [experimental]
+  wrangler types [path]           📝 Generate types from your Worker configuration
+  wrangler versions               🫧 List, view, upload and deploy Versions of your Worker to Cloudflare
+  wrangler vpc                    🌐 Manage VPC [open beta]
+  wrangler workflows              🔁 Manage Workflows
+
+STORAGE & DATABASES
+  wrangler artifacts              🧱 Manage Artifacts namespaces and repos [private beta]
+  wrangler d1                     🗄️ Manage Workers D1 databases
+  wrangler hyperdrive             🚀 Manage Hyperdrive databases
+  wrangler kv                     🗂️ Manage Workers KV Namespaces
+  wrangler pipelines              🚰 Manage Cloudflare Pipelines [open beta]
+  wrangler r2                     📦 Manage R2 buckets & objects
+  wrangler secrets-store          🔐 Manage the Secrets Store [open beta]
+  wrangler vectorize              🧮 Manage Vectorize indexes
+
+NETWORKING & SECURITY
+  wrangler cert                   🪪 Manage client mTLS certificates and CA certificate chains used for secured connections [open beta]
+  wrangler mtls-certificate       🪪 Manage certificates used for mTLS connections
+  wrangler tunnel                 🚇 Manage Cloudflare Tunnels [experimental]
+  wrangler turnstile              🛡️ Manage Turnstile widgets [alpha]
+
+GLOBAL FLAGS
+  -c, --config          Path to Wrangler configuration file  [string]
+      --cwd             Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
+  -e, --env             Environment to use for operations, and for selecting .env and .dev.vars files  [string]
+      --env-file        Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
+  -h, --help            Show help  [boolean]
+      --install-skills  Install Cloudflare skills for detected AI coding agents before running the command  [boolean] [default: false]
+      --profile         Use a specific auth profile  [string]
+  -v, --version         Show version number  [boolean]
+
+Please report any issues to https://github.com/cloudflare/workers-sdk/issues/new/choose (that folder has its own wrangler.toml and no assets).
+SQL changes: new numbered file in , run , then run the file in the Supabase SQL editor.
+
+### First admin user (one time)
+Supabase → Authentication → Users → **Add user** (your email + a password, tick Auto-confirm). Then in the SQL editor:
+\After that, create everyone else from the app: Settings → Users → New user.
+
+### Rebuilding from zero (new Supabase project)
+Run  →  in order, turn off sign-ups, put URL + publishable key in , ,
+
+╭─────────────────────────────────╮
+│ Did you mean "wrangler deploy"? │
+╰─────────────────────────────────╯
+
+wrangler
+
+COMMANDS
+  wrangler docs [search..]        📚 Open Wrangler's command documentation in your browser
+  wrangler complete [shell]       ⌨️ Generate and handle shell completions
+
+  wrangler email                  Manage Cloudflare Email services [open beta]
+
+ACCOUNT
+  wrangler auth                   🔐 Manage authentication
+  wrangler login                  🔓 Login to Cloudflare
+  wrangler logout                 🚪 Logout from Cloudflare
+  wrangler whoami                 🕵️ Retrieve your user information
+
+COMPUTE & AI
+  wrangler agent-memory           🧠 Manage Agent Memory namespaces [private beta]
+  wrangler ai                     🤖 Manage AI models
+  wrangler ai-search              🔍 Manage AI Search instances [open beta]
+  wrangler browser                🌐 Manage Browser Run sessions [open beta]
+  wrangler containers             📦 Manage Containers
+  wrangler delete [name]          🗑️ Delete a Worker from Cloudflare
+  wrangler deploy [path]          🆙 Deploy a Worker to Cloudflare
+  wrangler deployments            🚢 List and view the current and past deployments for your Worker
+  wrangler dev [script]           👂 Start a local server for developing your Worker
+  wrangler dispatch-namespace     🏗️ Manage dispatch namespaces
+  wrangler flagship               🚩 Manage Flagship apps and feature flags [open beta]
+  wrangler init [name]            📥 Initialize a basic Worker
+  wrangler pages                  ⚡️ Configure Cloudflare Pages
+  wrangler preview [script]       👀 Create a Preview deployment of the current Worker [open beta]
+  wrangler queues                 📬 Manage Workers Queues
+  wrangler rollback [version-id]  🔙 Rollback a deployment for a Worker
+  wrangler secret                 🤫 Generate a secret that can be referenced in a Worker
+  wrangler setup                  🪄 Setup a project to work on Cloudflare
+  wrangler tail [worker]          🦚 Start a log tailing session for a Worker
+  wrangler triggers               🎯 Updates the triggers of your current deployment [experimental]
+  wrangler types [path]           📝 Generate types from your Worker configuration
+  wrangler versions               🫧 List, view, upload and deploy Versions of your Worker to Cloudflare
+  wrangler vpc                    🌐 Manage VPC [open beta]
+  wrangler workflows              🔁 Manage Workflows
+
+STORAGE & DATABASES
+  wrangler artifacts              🧱 Manage Artifacts namespaces and repos [private beta]
+  wrangler d1                     🗄️ Manage Workers D1 databases
+  wrangler hyperdrive             🚀 Manage Hyperdrive databases
+  wrangler kv                     🗂️ Manage Workers KV Namespaces
+  wrangler pipelines              🚰 Manage Cloudflare Pipelines [open beta]
+  wrangler r2                     📦 Manage R2 buckets & objects
+  wrangler secrets-store          🔐 Manage the Secrets Store [open beta]
+  wrangler vectorize              🧮 Manage Vectorize indexes
+
+NETWORKING & SECURITY
+  wrangler cert                   🪪 Manage client mTLS certificates and CA certificate chains used for secured connections [open beta]
+  wrangler mtls-certificate       🪪 Manage certificates used for mTLS connections
+  wrangler tunnel                 🚇 Manage Cloudflare Tunnels [experimental]
+  wrangler turnstile              🛡️ Manage Turnstile widgets [alpha]
+
+GLOBAL FLAGS
+  -c, --config          Path to Wrangler configuration file  [string]
+      --cwd             Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
+  -e, --env             Environment to use for operations, and for selecting .env and .dev.vars files  [string]
+      --env-file        Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
+  -h, --help            Show help  [boolean]
+      --install-skills  Install Cloudflare skills for detected AI coding agents before running the command  [boolean] [default: false]
+      --profile         Use a specific auth profile  [string]
+  -v, --version         Show version number  [boolean]
+
+Please report any issues to https://github.com/cloudflare/workers-sdk/issues/new/choose, then  ⛅️ wrangler 4.135.0
+──────────────────── and , and save the worker URL in Settings → Verifier.
 
 ## How verification works (checked against the live site, 19 Sep 2026)
 
@@ -83,11 +232,11 @@ to every manager with a phone number in their profile.
 
 ## Open items
 
-1. **Reference code prefixes on the site do not match the seeded table.** Live examples: `IN-A-788-S` (seed says `INT`), `MG-A-823-R` (`MGW`),
-   `KW-S-1048-R` (`KWT`, and Studio is `S` not `ST`), `SB-A-1038-S` (`SMB`), `VR-V-1047-R`. Decide whether new codes follow the site's existing
-   convention, then fix the two tables in Settings → Location codes / Unit type codes. Codes only affect NEW listings.
-   New serials automatically start above the highest serial found on the website.
-2. Backlog: import with the CSV importer. Rows that carry the site's File Ref keep it and get verified automatically; rows without one get a new
-   code that has to be pasted into WordPress.
-3. The facilities list is a starter set (the site's own facility taxonomy is too messy to import). Edit in Settings → Lists.
-4. Agency monthly contract quantities: enter per month on the Agencies page ("Copy plan from last month" afterwards).
+1. **Reference codes now follow the website** (sql/006, derived from all 493 live listings): IN, MG, KW, SB, MK, AH, G, Studio = S … Exceptions:
+   Sheraton = SHR (the site uses SH for both Sheraton and Sahl Hasheesh), New El Kawther = NKW, El Wozra = WZR and Makadina = MKN (no examples on the site).
+   The site also has locations with no code yet: Ain Sokhna, Airport Road, Marina, Qeadat — add them in Settings → Location codes when needed.
+2. Every one of the 493 website listings has a File Ref, but 159 use older formats (e.g. , ). They import and verify fine as-is.
+   New serials start at 1049 automatically (highest on the site is 1048).
+3. GitHub: the repo exists only on this PC. Create an empty repo  and push ( is not installed here).
+4. The facilities list is a starter set (the site's facility taxonomy is too messy to import). Edit in Settings → Lists.
+5. Agency monthly contract quantities + fees: Settings → Agencies, then the Agencies page per month.

@@ -18,10 +18,10 @@ await db.exec(`
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on sequences to anon, authenticated;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -88,7 +88,7 @@ ok('service role can verify; view gives hours_to_publish + on time', r.rows[0].i
 await db.exec(`insert into listings (location,property_type,deal_type,source_type,source_name,entered_by,status,date_received,date_published_claimed)
   values ('El Gouna','Villa','rent','owner','x','${D1}','published_claimed', now() - interval '100 hours', now() - interval '30 hours')`);
 r = await db.query(`select reference_code, sla_state, claimed_not_found from vw_listing_sla where status='published_claimed'`);
-ok('claimed_not_found + red after 72h, code EG-V-xxxx-R', r.rows[0].claimed_not_found === true && r.rows[0].sla_state === 'red' && /^EG-V-\d+-R$/.test(r.rows[0].reference_code), JSON.stringify(r.rows[0]));
+ok('claimed_not_found + red after 72h, code G-V-xxxx-R (site prefix)', r.rows[0].claimed_not_found === true && r.rows[0].sla_state === 'red' && /^G-V-\d+-R$/.test(r.rows[0].reference_code), JSON.stringify(r.rows[0]));
 
 // tasks: approval is manager-only, send-back needs a reason
 await asUser(D1);

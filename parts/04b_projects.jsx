@@ -101,15 +101,15 @@
 
     const ProjectsPage = () => {
       const { data, cfg, now, go, nameOf } = useApp();
-      const [q, setQ] = useState(''); const [status, setStatus] = useState(null); const [form, setForm] = useState(false);
+      const [q, setQ] = useState(''); const [status, setStatus] = useState(null); const [form, setForm] = useState(false); const [view, setView] = useState('work');
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
         return data.projects.map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter(({ p }) => {
-          if (!status && p.status === 'archived') return false;
+          if (bucketOf(p.status) !== view) return false;
           if (status && p.status !== status) return false;
           return !s || `${p.reference_code} ${p.name} ${p.developer || ''} ${p.location}`.toLowerCase().includes(s);
-        }).sort((a, b) => new Date(b.p.date_received) - new Date(a.p.date_received));
-      }, [data.projects, q, status, cfg.project_sla_hours, now]);
+        }).sort((a, b) => view === 'published' ? new Date(publishedAt(b.p) || 0) - new Date(publishedAt(a.p) || 0) : new Date(b.p.date_received) - new Date(a.p.date_received));
+      }, [data.projects, q, status, view, cfg.project_sla_hours, now]);
       const exportCsv = () => downloadCSV(`hv-projects-${ymd(new Date())}.csv`,
         ['project_id', 'name', 'developer', 'location', 'status', 'starting_price', 'currency', 'delivery_date', 'completeness_pct', 'date_received', 'date_published_verified', 'entered_by', 'uploaded_by', 'website_url'],
         rows.map(({ p }) => [p.reference_code, p.name, p.developer, p.location, p.status, p.starting_price, p.currency, p.delivery_date, p.completeness_pct, p.date_received, p.date_published_verified, nameOf(p.entered_by), nameOf(p.published_claimed_by), p.website_url]));
@@ -119,11 +119,12 @@
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
             <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New project</Btn>
           </PageHeader>
+          <Tabs value={view} onChange={(v) => { setView(v); setStatus(null); }} tabs={bucketTabs(data.projects)} />
           <div className="no-print mb-3 flex gap-2">
             <input className={inputCls()} placeholder="Search Project ID, name, developer or location…" value={q} onChange={(e) => setQ(e.target.value)} />
-            <div className="w-48 shrink-0"><Select value={status} onChange={setStatus} placeholder="All statuses" options={Object.entries(LISTING_STATUS).map(([k, v]) => [k, v[0]])} /></div>
+            <div className="w-48 shrink-0"><Select value={status} onChange={setStatus} placeholder="All in this tab" options={BUCKETS[view].map((k) => [k, LISTING_STATUS[k][0]])} /></div>
           </div>
-          {!rows.length ? <Empty>No projects yet. Add the first one with “New project”.</Empty> : (
+          {!rows.length ? <Empty>{view === 'published' ? 'No published projects yet. A project moves here as soon as it is marked as published.' : view === 'closed' ? 'No rejected or archived projects.' : 'No projects in progress. Add one with “New project”.'}</Empty> : (
             <div className="grid gap-2 lg:grid-cols-2">
               {rows.map(({ p, s }) => (
                 <Card key={p.id} className={`cursor-pointer border-l-4 p-3 hover:border-brand-500 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`} onClick={() => go('project', p.id)}>
@@ -137,7 +138,9 @@
                     {s.claimedNotFound && <Badge className="bg-rose-600 text-white">Claimed, not found</Badge>}
                     <span className="ml-auto text-xs text-slate-500">{p.starting_price ? `from ${money(p.starting_price, p.currency)}` : ''}</span>
                   </div>
-                  <div className="mt-1.5 text-xs text-slate-600">Entered by <b className="text-slate-900">{nameOf(p.entered_by)}</b> · {fmtDate(p.date_received)}</div>
+                  {view === 'published'
+                    ? <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-xs text-slate-600"><span>Published {fmtDate(publishedAt(p))} by <b className="text-slate-900">{nameOf(p.published_claimed_by || p.assigned_to)}</b></span>{s.verified ? <span className={s.onTime ? 'text-emerald-700' : 'text-rose-700'}>live in {fmtHours(s.hours)}{s.onTime ? '' : ' — late'}</span> : <span className="text-amber-700">waiting for website check</span>}{p.website_url && <a className="text-brand-700 underline" href={p.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open on website ↗</a>}</div>
+                    : <div className="mt-1.5 text-xs text-slate-600">Entered by <b className="text-slate-900">{nameOf(p.entered_by)}</b> · {fmtDate(p.date_received)}</div>}
                 </Card>
               ))}
             </div>

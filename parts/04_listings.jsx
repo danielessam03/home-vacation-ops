@@ -130,11 +130,12 @@
       const { me, data, cfg, now, go, nameOf } = useApp();
       const [q, setQ] = useState(''); const [flt, setFlt] = useState({ status: null, sla: null, location: null, source: null, by: null, comp: null, from: '', to: '' });
       const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false);
+      const [view, setView] = useState('work');      // work | published | closed
       const setFilter = (k, v) => setFlt((p) => ({ ...p, [k]: v }));
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
         return data.listings.map((l) => ({ l, s: slaOf(l, cfg.sla_hours, now) })).filter(({ l, s: sl }) => {
-          if (!flt.status && l.status === 'archived') return false;
+          if (bucketOf(l.status) !== view) return false;
           if (flt.status && l.status !== flt.status) return false;
           if (flt.sla && (sl.state !== flt.sla || sl.verified)) return false;
           if (flt.location && l.location !== flt.location) return false;
@@ -146,8 +147,8 @@
           if (flt.to && new Date(l.date_received) >= addDays(new Date(flt.to), 1)) return false;
           if (s && !(`${l.reference_code} ${l.title || ''} ${l.source_name || ''} ${l.owner_name || ''} ${l.owner_phone || ''}`.toLowerCase().includes(s))) return false;
           return true;
-        }).sort((a, b) => new Date(b.l.date_received) - new Date(a.l.date_received));
-      }, [data.listings, q, flt, cfg.sla_hours, now]);
+        }).sort((a, b) => view === 'published' ? new Date(publishedAt(b.l) || 0) - new Date(publishedAt(a.l) || 0) : new Date(b.l.date_received) - new Date(a.l.date_received));
+      }, [data.listings, q, flt, view, cfg.sla_hours, now]);
       const activeFilters = Object.values(flt).filter(Boolean).length;
       const exportCsv = () => downloadCSV(`hv-listings-${ymd(new Date())}.csv`,
         ['reference_code', 'title', 'owner_name', 'owner_phone', 'status', 'location', 'property_type', 'deal_type', 'price', 'currency', 'completeness_pct', 'missing_fields', 'date_received', 'date_published_claimed', 'date_published_verified', 'hours', 'sla_state', 'source_type', 'source_name', 'entered_by', 'website_url'],
@@ -160,13 +161,14 @@
             <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>
             <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
           </PageHeader>
+          <Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={bucketTabs(data.listings)} />
           <div className="no-print mb-3 flex gap-2">
             <input className={inputCls()} placeholder="Search ref code, owner, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
             <Btn kind={activeFilters ? 'soft' : 'ghost'} onClick={() => setShowFilters(!showFilters)}>Filters{activeFilters ? ` (${activeFilters})` : ''}</Btn>
           </div>
           {showFilters && (
             <Card className="no-print mb-3 grid grid-cols-2 gap-3 p-3 sm:grid-cols-4">
-              <Field label="Status"><Select value={flt.status} onChange={(v) => setFilter('status', v)} options={Object.entries(LISTING_STATUS).map(([k, v]) => [k, v[0]])} placeholder="All (not archived)" /></Field>
+              <Field label="Status"><Select value={flt.status} onChange={(v) => setFilter('status', v)} options={BUCKETS[view].map((k) => [k, LISTING_STATUS[k][0]])} placeholder="All in this tab" /></Field>
               <Field label="SLA state (open)"><Select value={flt.sla} onChange={(v) => setFilter('sla', v)} options={[['green', 'On track'], ['yellow', 'At risk'], ['red', 'Breached']]} placeholder="All" /></Field>
               <Field label="Location"><Select value={flt.location} onChange={(v) => setFilter('location', v)} options={Object.keys(cfg.location_codes || {}).sort()} placeholder="All" /></Field>
               <Field label="Source"><Select value={flt.source} onChange={(v) => setFilter('source', v)} options={SOURCE_TYPES.map((s) => [s, titleCase(s)])} placeholder="All" /></Field>
@@ -176,7 +178,7 @@
               <Field label="Received to"><input type="date" className={inputCls()} value={flt.to} onChange={(e) => setFilter('to', e.target.value)} /></Field>
             </Card>
           )}
-          {!rows.length ? <Empty>No listings match. Create the first one with “New listing”.</Empty> : (
+          {!rows.length ? <Empty>{view === 'published' ? 'Nothing published yet. A listing moves here as soon as it is marked as published.' : view === 'closed' ? 'No rejected or archived listings.' : 'Nothing in progress. Create a listing with “New listing”.'}</Empty> : (
             <>
               {/* phone: cards */}
               <div className="space-y-2 md:hidden">
@@ -190,8 +192,9 @@
                       <StatusBadge status={l.status} />
                       {l.completeness_pct < 100 && <Badge className="bg-rose-600 text-white">{l.completeness_pct}% · {(l.missing_fields || []).length} missing</Badge>}
                       {s.claimedNotFound && <Badge className="bg-rose-600 text-white">Claimed, not found</Badge>}
-                      <span className="ml-auto text-xs text-slate-500">{fmtDate(l.date_received)}</span>
+                      <span className="ml-auto text-xs text-slate-500">{view === 'published' ? `Published ${fmtDate(publishedAt(l))}` : fmtDate(l.date_received)}</span>
                     </div>
+                    {view === 'published' && <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-xs text-slate-600"><span>Uploaded by <b className="text-slate-900">{nameOf(l.published_claimed_by || l.assigned_to)}</b></span>{s.verified ? <span className={s.onTime ? 'text-emerald-700' : 'text-rose-700'}>live in {fmtHours(s.hours)}{s.onTime ? '' : ' — late'}</span> : <span className="text-amber-700">waiting for website check</span>}{l.website_url && <a className="text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open on website ↗</a>}</div>}
                     <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-slate-600"><span>Owner: <b className="text-slate-900">{l.owner_name || '—'}</b></span><span>Entered by <b className="text-slate-900">{nameOf(l.entered_by)}</b></span></div>
                   </Card>
                 ))}
@@ -199,7 +202,7 @@
               {/* desktop: table */}
               <Card className="scroll-x hidden md:block">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', 'SLA', 'Complete', 'Price', 'Source', 'Entered by', 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', 'SLA', 'Complete', 'Price', 'Source', view === 'published' ? 'Uploaded by' : 'Entered by', view === 'published' ? 'Published' : 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
                   <tbody>
                     {rows.map(({ l, s }) => (
                       <tr key={l.id} onClick={() => go('listing', l.id)} className={`cursor-pointer border-l-4 border-t border-t-slate-100 hover:bg-slate-50 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
@@ -211,8 +214,8 @@
                         <td className="px-3 py-2">{l.completeness_pct < 100 ? <Badge className="bg-rose-600 text-white">{l.completeness_pct}%</Badge> : <Badge className="bg-emerald-100 text-emerald-800">100%</Badge>}</td>
                         <td className="num whitespace-nowrap px-3 py-2">{money(l.price, l.currency)}</td>
                         <td className="px-3 py-2"><div className="max-w-[10rem] truncate">{l.source_name}</div><div className="text-xs text-slate-500">{titleCase(l.source_type)}</div></td>
-                        <td className="px-3 py-2">{nameOf(l.entered_by)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{fmtDateTime(l.date_received)}</td>
+                        <td className="px-3 py-2">{view === 'published' ? nameOf(l.published_claimed_by || l.assigned_to) : nameOf(l.entered_by)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{view === 'published' ? <>{fmtDateTime(publishedAt(l))}{l.website_url && <a className="ml-2 text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>site ↗</a>}</> : fmtDateTime(l.date_received)}</td>
                       </tr>
                     ))}
                   </tbody>

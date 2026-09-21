@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.9.0';
+    const APP_VERSION = 'v1.10.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -65,6 +65,11 @@
       published_claimed: ['Published (claimed)', 'bg-indigo-100 text-indigo-800'], verified_live: ['Verified live', 'bg-emerald-100 text-emerald-800'],
       on_hold: ['On hold', 'bg-amber-100 text-amber-800'], rejected: ['Rejected', 'bg-rose-100 text-rose-800'], archived: ['Archived', 'bg-slate-200 text-slate-500'],
     };
+    /* Where a record lives: the working list holds only what still needs work; anything published moves to its own tab. */
+    const BUCKETS = { work: ['draft', 'ready_to_publish', 'on_hold'], published: ['published_claimed', 'verified_live'], closed: ['rejected', 'archived'] };
+    const bucketOf = (status) => BUCKETS.published.includes(status) ? 'published' : BUCKETS.closed.includes(status) ? 'closed' : 'work';
+    const publishedAt = (r) => r.date_published_verified || r.date_published_claimed;
+    const bucketTabs = (rows, word) => [['work', `In progress (${rows.filter((r) => bucketOf(r.status) === 'work').length})`], ['published', `Published (${rows.filter((r) => bucketOf(r.status) === 'published').length})`], ['closed', `Rejected / archived (${rows.filter((r) => bucketOf(r.status) === 'closed').length})`]];
     const SOURCE_TYPES = ['sales_agent', 'owner', 'developer', 'whatsapp', 'walk_in', 'other'];
     const CHANNEL_STATUSES = ['not_started', 'in_progress', 'published', 'rejected'];
     const TASK_COLS = [['todo', 'To do'], ['doing', 'Doing'], ['review', 'Review'], ['done', 'Done']];

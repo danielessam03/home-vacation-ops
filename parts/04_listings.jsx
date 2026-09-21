@@ -43,12 +43,12 @@
       );
     };
 
-    const ListingForm = ({ listing, onClose, onSaved }) => {
+    const ListingForm = ({ listing, prefill, onClose, onSaved }) => {      // prefill: a listing born from a photography request
       const { me, cfg, data, save, reloadWhere, toast } = useApp();
       const isEdit = !!listing;
       const [f, setF] = useState(() => {
         const base = { facilities: [], currency: null, date_received: new Date().toISOString(), source_type: null, media_images_count: '', media_videos_count: '' };
-        const src = listing ? { ...listing } : base;
+        const src = listing ? { ...listing } : { ...base, ...(prefill || {}) };
         NUM_FIELDS.forEach((k) => { src[k] = src[k] == null || (!listing && src[k] === 0) ? '' : String(src[k]); });
         if (listing && listing.media_images_count === 0) src.media_images_count = '0';
         if (listing && listing.media_videos_count === 0) src.media_videos_count = '0';
@@ -89,6 +89,7 @@
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
+        if (!isEdit && prefill && prefill.photo_request_id) { payload.photo_request_id = prefill.photo_request_id; if (prefill.photos_approved) payload.media_uploaded = true; }   // the manager's approval travels with it
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
         const row = await save('listings', payload, isEdit ? listing.id : null);
@@ -100,7 +101,7 @@
       };
 
       return (
-        <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : 'New listing'} onClose={onClose} footer={<>
+        <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : prefill ? 'New listing — from the photography list' : 'New listing'} onClose={onClose} footer={<>
           <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
           <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
           <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">

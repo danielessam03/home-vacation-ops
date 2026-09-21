@@ -52,6 +52,7 @@
         tasks_on_time_pct: pct(onTime.length, done.length + lateOpen.length),
         deliverables_logged: data.agency_deliverables.filter((d) => d.logged_by === user.id && inRange(d.created_at, range)).length,
         shoots_completed: shootDone.length,
+        shoots_approved: (data.photo_requests || []).filter((r) => r.assigned_to === user.id && r.approved_at && inRange(r.approved_at, range)).length,
         projects_entered: (data.projects || []).filter((p) => p.entered_by === user.id && p.status !== 'archived' && inRange(p.date_received, range)).length,
         projects_uploaded: (data.projects || []).filter((p) => ['published_claimed', 'verified_live'].includes(p.status) && (p.published_claimed_by || p.assigned_to || p.entered_by) === user.id && inRange(p.date_received, range)).length,
         media_complete: data.listings.filter((l) => mediaListingIds.has(l.id) && l.media_uploaded === true && l.media_edited === true).length,

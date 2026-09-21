@@ -147,7 +147,7 @@
     // =========================================================================================
     // a data-entry person only sees the stage(s) they actually work in: entry (Sally) and/or upload (Lucy)
     const kpiDefsForUser = (cfg, role, k) => {
-      const active = { entry: k.listings_entered > 0 || k.projects_entered > 0, upload: k.listings_uploaded > 0 || k.waiting_upload > 0 || k.projects_uploaded > 0 };
+      const active = { entry: k.listings_entered > 0 || k.projects_entered > 0 || k.shoots_approved > 0, upload: k.listings_uploaded > 0 || k.waiting_upload > 0 || k.projects_uploaded > 0 };
       const any = active.entry || active.upload;
       return kpiDefsFor(cfg, role).filter((d) => !d.part || !any || active[d.part]);
     };

@@ -33,10 +33,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -157,6 +157,27 @@ r = await db.query(`select (select count(*) from ops_listings)::int l, (select c
 await asUser(D1);
 r = await db.query(`select (select count(*) from ops_profiles)::int p, (select count(*) from app_users)::int a, (select role from ops_profiles where email='admin@x.com') ceo_role`);
 ok('ops staff see colleagues via ops_profiles but still only their own app_users row; CEO defaults to admin', r.rows[0].p === 5 && r.rows[0].a === 1 && r.rows[0].ceo_role === 'admin', JSON.stringify(r.rows[0]));
+
+// ---- needs photography: request -> shot -> manager approves -> listing created with the approval attached
+await asUser(D1);
+r = await db.query(`insert into ops_photo_requests (owner_name,location,property_type,deal_type,requested_by,assigned_to) values ('Mr Hassan','Hadaba','Apartment','sale','${D1}','${MK}') returning *`);
+const PR = r.rows[0];
+ok('photo request starts as requested with a PH number', PR.status === 'requested' && Number(PR.request_no) >= 1);
+await expectErr('scheduling needs a date', `update ops_photo_requests set status='scheduled' where id='${PR.id}'`, /date and time/);
+await asUser(MK); await db.exec(`update ops_photo_requests set status='shot', intranet_folder='2026-09/Hadaba/Hassan', photos_count=14 where id='${PR.id}'`);
+await expectErr('photographer cannot approve own photos', `update ops_photo_requests set status='ready' where id='${PR.id}'`, /Only the manager/);
+await asUser(M); await expectErr('re-shoot needs a note', `update ops_photo_requests set status='scheduled', scheduled_at=now() where id='${PR.id}'`, /re-shot/);
+await db.exec(`update ops_photo_requests set status='ready' where id='${PR.id}'`);
+await asUser(D1);
+await expectErr('staff still cannot self-approve photos on an ordinary listing', `insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,media_uploaded) values ('Hadaba','Apartment','sale','owner','x','${D1}',true)`, /Only the manager/);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,owner_name,entered_by,media_uploaded,photo_request_id) values ('Hadaba','Apartment','sale','owner','Mr Hassan','Mr Hassan','${D1}',true,'${PR.id}') returning id, media_uploaded, media_approved_by`);
+ok('listing born from an approved request carries the manager approval', r.rows[0].media_uploaded === true && r.rows[0].media_approved_by === M, JSON.stringify(r.rows[0]));
+const bornId = r.rows[0].id;
+r = await db.query(`select status, listing_id from ops_photo_requests where id='${PR.id}'`); ok('request closes itself and points at the listing', r.rows[0].status === 'converted' && r.rows[0].listing_id === bornId);
+await asService();
+r = await db.query(`select m.code, (select user_id from employees e where e.id=k.employee_id) u from kpi_entries k join kpi_metrics m on m.id=k.metric_id where k.external_id like 'ops:shoot:%'`);
+ok('approved shoot credits the photographer in HR', r.rows.length === 1 && r.rows[0].code === 'ops_photo_shoot' && r.rows[0].u === MK);
+await db.exec(`delete from kpi_entries where external_id like 'ops:shoot:%'; update ops_listings set status='archived' where id='${bornId}'`);
 
 // ---- projects: own serial, P-LOC-###-S, website auto-ids (PRJ-…) ignored
 await asService();

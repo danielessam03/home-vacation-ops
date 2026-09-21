@@ -270,7 +270,7 @@
       profiles: { order: 'full_name' }, listings: { order: 'date_received', desc: true }, listing_channels: { order: 'updated_at', desc: true }, tasks: { order: 'created_at', desc: true },
       recurring_templates: { order: 'created_at' }, agencies: { order: 'display_name' }, agency_deliverables: { order: 'due_date' }, agency_metrics: { order: 'period_month', desc: true },
       kpi_targets: { order: 'period_month', desc: true }, alerts: { order: 'created_at', desc: true, max: 300 }, settings: { order: 'key' }, report_snapshots: { order: 'created_at', desc: true, max: 100 },
-      verifier_runs: { order: 'started_at', desc: true, max: 25 }, projects: { order: 'date_received', desc: true },
+      verifier_runs: { order: 'started_at', desc: true, max: 25 }, projects: { order: 'date_received', desc: true }, photo_requests: { order: 'created_at', desc: true },
     };
     const EMPTY = Object.fromEntries(Object.keys(TABLES).map((t) => [t, []]));
 
@@ -286,7 +286,7 @@
 
     const NAV = [
       ['dashboard', 'Home', 'home', () => true], ['listings', 'Listings', 'list', () => true], ['tasks', 'Tasks', 'tasks', () => true], ['alerts', 'Alerts', 'bell', () => true],
-      ['projects', 'Projects', 'project', () => true],
+      ['projects', 'Projects', 'project', () => true], ['photo', 'Needs photography', 'camera', () => true],
       ['agencies', 'Agencies', 'agency', (me) => me.role !== 'data_entry'], ['kpis', 'KPIs', 'chart', () => true], ['reports', 'Reports', 'report', (me) => isMgr(me)], ['settings', 'Settings', 'cog', (me) => me.role === 'admin'],
     ];
 
@@ -334,7 +334,7 @@
       // the verifier changes data server-side: refresh the moving tables every 3 min and when the tab regains focus
       useEffect(() => {
         if (!me) return;
-        const refresh = () => ['listings', 'listing_channels', 'projects', 'tasks', 'alerts'].forEach(reloadTable);
+        const refresh = () => ['listings', 'listing_channels', 'projects', 'photo_requests', 'tasks', 'alerts'].forEach(reloadTable);
         const t1 = setInterval(() => setNow(Date.now()), 60000); const t2 = setInterval(refresh, 180000);
         const onVis = () => { if (!document.hidden) { setNow(Date.now()); refresh(); } };
         document.addEventListener('visibilitychange', onVis);
@@ -378,7 +378,7 @@
       const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' || route.page === 'project' ? route.page : 'dashboard';
       const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
       const navBtn = (n, mobile) => {
-        const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : 0;
+        const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : n[0] === 'photo' ? data.photo_requests.filter((r) => isMgr(me) ? ['requested', 'shot'].includes(r.status) : (r.assigned_to === me.id && ['requested', 'scheduled'].includes(r.status))).length : 0;
         return mobile ? (
           <button key={n[0]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
         ) : (
@@ -410,6 +410,7 @@
                 {page === 'listings' && <ListingsPage />}
                 {page === 'listing' && <ListingDetail key={route.id} id={route.id} />}
                 {page === 'projects' && <ProjectsPage />}
+                {page === 'photo' && <PhotoRequestsPage />}
                 {page === 'project' && <ProjectDetail key={route.id} id={route.id} />}
                 {page === 'tasks' && <TasksPage />}
                 {page === 'agencies' && <AgenciesPage />}

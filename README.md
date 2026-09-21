@@ -9,7 +9,7 @@ website, tasks, agency scorecards, KPIs and reports. It is the 4th Home Vacation
 - **Worker**: `worker/verifier.js` on Cloudflare Workers — hourly matching + alerts, nightly recurring tasks.
 - **Hosting**: Cloudflare Pages (`.pages.dev`). Never Netlify.
 
-Current version: **v1.6.0** (login footer + sidebar — bump `APP_VERSION` on every deploy).
+Current version: **v1.7.0** (login footer + sidebar — bump `APP_VERSION` on every deploy).
 
 ## Live
 

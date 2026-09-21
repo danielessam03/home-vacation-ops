@@ -126,6 +126,7 @@ alter table ops_listings add column if not exists media_approved_by uuid referen
 alter table ops_listings add column if not exists media_approved_at timestamptz;
 alter table ops_listings add column if not exists published_claimed_by uuid references public.app_users(id);
 alter table ops_listings add column if not exists date_ready timestamptz;
+alter table ops_listings add column if not exists photo_request_id uuid;      -- FK added in 012 (table is created there)
 create index if not exists ops_idx_listings_status on ops_listings(status);
 create index if not exists ops_idx_listings_entered_by on ops_listings(entered_by);
 create index if not exists ops_idx_listings_assigned_to on ops_listings(assigned_to);

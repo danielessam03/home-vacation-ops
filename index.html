@@ -44,7 +44,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.8.0';
+    const APP_VERSION = 'v1.9.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -192,7 +192,7 @@
       tasks: 'M9 11l3 3 8-8M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h10', bell: 'M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9zm4 11a2 2 0 0 0 4 0',
       agency: 'M4 20V6l8-3v17M12 9l8 2v9M2 20h20M8 9h.01M8 13h.01M8 17h.01M16 14h.01M16 17h.01', chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
       report: 'M7 3h8l4 4v14H7zM14 3v5h5M10 13h6M10 17h6', cog: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm8 3l2-1.5-2-3.5-2.4.8a7 7 0 0 0-1.6-.9L15.5 4h-4l-.5 2.4a7 7 0 0 0-1.6.9L7 6.5 5 10l2 1.5a7 7 0 0 0 0 1L5 14l2 3.5 2.4-.8c.5.4 1 .7 1.6.9l.5 2.4h4l.5-2.4c.6-.2 1.1-.5 1.6-.9l2.4.8 2-3.5-2-1.5a7 7 0 0 0 0-1z',
-      more: 'M5 12h.01M12 12h.01M19 12h.01', project: 'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 10h.01M15 10h.01', camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z', plus: 'M12 5v14M5 12h14', x: 'M6 6l12 12M18 6L6 18', copy: 'M9 9h10v11H9zM5 15V4h10', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+      more: 'M5 12h.01M12 12h.01M19 12h.01', project: 'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 10h.01M15 10h.01', camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z', spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z', plus: 'M12 5v14M5 12h14', x: 'M6 6l12 12M18 6L6 18', copy: 'M9 9h10v11H9zM5 15V4h10', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
       check: 'M5 12l5 5 9-10', back: 'M15 5l-7 7 7 7', upload: 'M12 16V4M7 9l5-5 5 5M4 20h16', print: 'M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
     };
     const Icon = ({ name, className = 'w-5 h-5' }) => (
@@ -656,7 +656,7 @@
     const ListingDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const l = data.listings.find((x) => x.id === id);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
       const channels = data.listing_channels.filter((c) => c.listing_id === id);
       const mgr = isMgr(me);
       useEffect(() => {
@@ -685,6 +685,7 @@
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-2xl font-black tracking-wide text-slate-900">{l.reference_code}</span>
                   <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn>
+                  <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>
@@ -775,6 +776,7 @@
             </div>
           </div>
           {edit && <ListingForm listing={l} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
+          {ai && <AiExportModal kind="listing" record={l} onClose={() => setAi(false)} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject listing" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>
@@ -1065,7 +1067,7 @@
     const ProjectDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const p = data.projects.find((x) => x.id === id);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
       const mgr = isMgr(me);
       useEffect(() => {
         if (!mgr || !p) return;
@@ -1082,7 +1084,7 @@
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn></div>
+                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn></div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress <b>Project ID</b> field. If it is left empty the website invents a PRJ-… number and the project can never be verified.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{p.name}</h2>
                 <div className="text-sm text-slate-700">{p.developer || 'Developer —'} · {p.location}</div>
@@ -1149,6 +1151,7 @@
             </div>
           </div>
           {edit && <ProjectForm project={p} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
+          {ai && <AiExportModal kind="project" record={p} onClose={() => setAi(false)} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject project" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>
@@ -1299,6 +1302,105 @@
             source_type: convert.source_type, source_name: convert.source_name || convert.owner_name, media_has_logo: convert.has_logo, media_edited: convert.edited, media_uploaded: convert.status === 'ready' ? true : null }}
             onClose={() => setConvert(null)} onSaved={async (row) => { setConvert(null); await reloadTable('photo_requests'); go('listing', row.id); }} />}
         </div>
+      );
+    };
+
+    // =========================================================================================
+    // EXPORT FOR AI — one button on every listing / project that produces a clean brief to paste into an AI tool
+    // (ChatGPT, Claude, Gemini…) so it writes the website description. Only marketing facts are exported:
+    // the owner's name and phone, the source and staff names are NEVER included.
+    // =========================================================================================
+    const AI_DEFAULT_INSTRUCTIONS = `You are the copywriter for Home Vacation, a real-estate company in Hurghada on Egypt's Red Sea coast (home-vacation.com).
+Write the website text for the property below.
+Rules:
+- Use ONLY the facts listed. If something says "not provided", leave it out — never invent sizes, prices, distances, views or facilities.
+- Keep the price and currency exactly as written. Do not convert currencies.
+- Warm, clear, trustworthy tone for international buyers and holiday-home investors. No exaggeration, no ALL CAPS, no emojis.
+- Mention the reference code once at the end.`;
+    const AI_OUTPUT_LISTING = `1. SEO title (max 60 characters)
+2. Meta description (max 155 characters)
+3. Main description: 150–220 words, 2–3 short paragraphs
+4. Key features: 5–7 bullet points
+5. A one-line call to action`;
+    const AI_OUTPUT_PROJECT = `1. SEO title (max 60 characters)
+2. Meta description (max 155 characters)
+3. Project overview: 200–300 words, 3 short paragraphs (the project, the units, the location & lifestyle)
+4. Payment plan summary in 2–3 lines, exactly as given
+5. Key features: 6–8 bullet points
+6. A one-line call to action`;
+    const AI_LANGS = ['English', 'Arabic', 'German', 'Russian', 'French', 'Italian', 'Polish', 'Czech'];
+
+    const aiVal = (v, unit = '') => v == null || v === '' || (Array.isArray(v) && !v.length) ? 'not provided' : Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'Yes' : 'No') : `${v}${unit}`;
+    const aiFloor = (n) => n == null ? 'not provided' : Number(n) === 0 ? 'Ground floor' : `Floor ${n}`;
+
+    function listingFacts(l) {
+      return [
+        ['Reference code', l.reference_code], ['Listing type', l.deal_type === 'rent' ? 'For rent' : 'For sale'], ['Property type', l.property_type],
+        ['Location', `${l.location}, Hurghada / Red Sea, Egypt`], ['Working title', l.title],
+        ['Area', l.area_sqm == null ? null : `${l.area_sqm} sqm`], ['Bedrooms', l.bedrooms == null ? null : (Number(l.bedrooms) === 0 ? 'Studio / no separate bedroom' : l.bedrooms)], ['Bathrooms', l.bathrooms],
+        ['Balconies', l.balconies], ['Floor', l.floor == null ? null : aiFloor(l.floor)], ['Building levels', l.building_levels], ['Furnished', l.furnished], ['View', l.view_type],
+        ['Price', l.price == null ? null : `${Number(l.price).toLocaleString('en-US')} ${l.currency || ''}`.trim()], ['Exclusive to Home Vacation', l.is_exclusive ? true : undefined],      // only worth saying when it IS exclusive
+        ['Facilities', l.facilities], ['Selling points (from our team)', l.selling_points],
+        ['Target buyer — nationality', l.buyer_persona_nationality], ['Target buyer — age range', l.buyer_persona_age_range], ['Target buyer — profile', l.buyer_persona_gender],
+      ];
+    }
+    function projectFacts(p) {
+      return [
+        ['Project ID', p.reference_code], ['Project name', p.name], ['Developer', p.developer], ['Location', `${p.location}, Hurghada / Red Sea, Egypt`],
+        ['Unit types available', p.project_types], ['Unit sizes', p.unit_sizes], ['Bedrooms', p.bedrooms],
+        ['Starting price', p.starting_price == null ? null : `${Number(p.starting_price).toLocaleString('en-US')} ${p.currency || ''}`.trim()],
+        ['Down payment', p.down_payment], ['Installments', p.installments], ['Delivery date', p.delivery_date], ['Finishing', p.finishing],
+        ['Exclusive to Home Vacation', p.is_exclusive ? true : undefined], ['Facilities', p.facilities], ['Selling points (from our team)', p.selling_points],
+      ];
+    }
+    function buildAiBrief({ kind, record, instructions, language, format }) {
+      const facts = (kind === 'project' ? projectFacts(record) : listingFacts(record)).filter(([, v]) => v !== undefined);
+      const out = kind === 'project' ? AI_OUTPUT_PROJECT : AI_OUTPUT_LISTING;
+      const head = `# TASK\n${(instructions || AI_DEFAULT_INSTRUCTIONS).trim()}\n- Write in: ${language}.\n`;
+      const body = format === 'json'
+        ? '# FACTS (JSON — null means "not provided")\n```json\n' + JSON.stringify(Object.fromEntries(facts.map(([k, v]) => [k, v == null || v === '' || (Array.isArray(v) && !v.length) ? null : v])), null, 2) + '\n```\n'
+        : `# ${kind === 'project' ? 'PROJECT' : 'PROPERTY'} FACTS\n` + facts.map(([k, v]) => `- ${k}: ${aiVal(v)}`).join('\n') + '\n';
+      return `${head}\n${body}\n# WHAT TO DELIVER\n${out}\n`;
+    }
+
+    const AiExportModal = ({ kind, record, onClose }) => {
+      const { cfg, toast } = useApp();
+      const [language, setLanguage] = useState(() => { try { return localStorage.getItem('hvops_ai_lang') || 'English'; } catch (e) { return 'English'; } });
+      const [format, setFormat] = useState('text'); const [copied, setCopied] = useState(false);
+      const brief = useMemo(() => buildAiBrief({ kind, record, instructions: cfg.ai_brief_instructions, language, format }), [kind, record, cfg.ai_brief_instructions, language, format]);
+      const missing = (kind === 'project' ? projectFacts(record) : listingFacts(record)).filter(([, v]) => v !== undefined && (v == null || v === '' || (Array.isArray(v) && !v.length))).map(([k]) => k);
+      const copy = async () => {
+        try { await navigator.clipboard.writeText(brief); } catch (e) { const t = document.createElement('textarea'); t.value = brief; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+        setCopied(true); toast('Copied — paste it into your AI tool'); setTimeout(() => setCopied(false), 2000);
+      };
+      const download = () => {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([brief], { type: 'text/plain;charset=utf-8' }));
+        a.download = `${record.reference_code}-ai-brief.txt`; document.body.appendChild(a); a.click(); a.remove();
+      };
+      return (
+        <Modal wide title={`Export for AI — ${record.reference_code}`} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Close</Btn><Btn kind="ghost" onClick={download}>Download .txt</Btn><Btn onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy everything'}</Btn></>}>
+          <p className="mb-3 text-sm text-slate-600">Copy this and paste it into ChatGPT, Claude or any AI tool — it contains the instructions and every fact, ready to turn into the website description. <b>The owner's name and phone, the source and staff names are never included.</b></p>
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <Field label="Write the description in"><Select value={language} onChange={(v) => { const x = v || 'English'; setLanguage(x); try { localStorage.setItem('hvops_ai_lang', x); } catch (e) {} }} options={AI_LANGS} /></Field>
+            <Field label="Facts format"><Select value={format} onChange={(v) => setFormat(v || 'text')} options={[['text', 'Plain list (best for chat tools)'], ['json', 'JSON (for automations)']]} /></Field>
+          </div>
+          {missing.length > 0 && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">Not filled in yet, so the AI is told to leave them out: {missing.join(', ')}.</div>}
+          <textarea readOnly rows={16} className={`${inputCls()} !text-xs font-mono leading-relaxed`} value={brief} onFocus={(e) => e.target.select()} />
+        </Modal>
+      );
+    };
+
+    // Settings > Lists: the instruction block that opens every AI brief
+    const AiPromptEditor = () => {
+      const { cfg, saveSetting } = useApp();
+      const [txt, setTxt] = useState(cfg.ai_brief_instructions || AI_DEFAULT_INSTRUCTIONS);
+      return (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-brand-800">AI export — instructions sent with every listing / project</h3>
+          <p className="mb-2 text-xs text-slate-500">This text opens every “Export for AI” brief. Put your house style here once (tone, words to avoid, how to sign off).</p>
+          <textarea rows={9} className={`${inputCls()} !text-sm`} value={txt} onChange={(e) => setTxt(e.target.value)} />
+          <div className="mt-2 flex gap-2"><Btn onClick={() => saveSetting('ai_brief_instructions', txt)}>Save</Btn><Btn kind="ghost" onClick={() => setTxt(AI_DEFAULT_INSTRUCTIONS)}>Reset to default</Btn></div>
+        </Card>
       );
     };
 
@@ -2113,7 +2215,7 @@
               <div className="mt-3"><Btn onClick={async () => { await saveSetting('default_channels', chans); await saveSetting('portal_labels', labels); }}>Save</Btn></div>
             </Card>
           )}
-          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="project_types" title="Project — unit types" /><ListEditor settingKey="finishing_types" title="Project — finishing options" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /></div>}
+          {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="project_types" title="Project — unit types" /><ListEditor settingKey="finishing_types" title="Project — finishing options" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /><AiPromptEditor /></div>}
           {tab === 'metrics' && <MetricDefsEditor />}
           {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
           {tab === 'verifier' && <VerifierTab />}

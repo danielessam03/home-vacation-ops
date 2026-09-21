@@ -150,7 +150,7 @@
     const ProjectDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const p = data.projects.find((x) => x.id === id);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
       const mgr = isMgr(me);
       useEffect(() => {
         if (!mgr || !p) return;
@@ -167,7 +167,7 @@
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn></div>
+                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn></div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress <b>Project ID</b> field. If it is left empty the website invents a PRJ-… number and the project can never be verified.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{p.name}</h2>
                 <div className="text-sm text-slate-700">{p.developer || 'Developer —'} · {p.location}</div>
@@ -234,6 +234,7 @@
             </div>
           </div>
           {edit && <ProjectForm project={p} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
+          {ai && <AiExportModal kind="project" record={p} onClose={() => setAi(false)} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject project" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>

@@ -229,7 +229,7 @@
     const ListingDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const l = data.listings.find((x) => x.id === id);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
       const channels = data.listing_channels.filter((c) => c.listing_id === id);
       const mgr = isMgr(me);
       useEffect(() => {
@@ -258,6 +258,7 @@
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-2xl font-black tracking-wide text-slate-900">{l.reference_code}</span>
                   <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn>
+                  <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>
@@ -348,6 +349,7 @@
             </div>
           </div>
           {edit && <ListingForm listing={l} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
+          {ai && <AiExportModal kind="listing" record={l} onClose={() => setAi(false)} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject listing" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>

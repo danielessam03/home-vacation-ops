@@ -296,6 +296,13 @@
       const [data, setData] = useState(EMPTY); const [loading, setLoading] = useState(false); const [loadError, setLoadError] = useState('');
       const [route, setRoute] = useState({ page: 'dashboard', id: null }); const [toasts, setToasts] = useState([]); const [now, setNow] = useState(Date.now()); const [more, setMore] = useState(false);
       const sessionRef = useRef(null); sessionRef.current = session;
+      // only the Home Vacation systems ticked for this account in HR are offered in the switcher
+      const [systems, setSystems] = useState(null);
+      useEffect(() => {
+        const id = session && session.user.id; if (!id) { setSystems(null); return; }
+        try { const c = JSON.parse(localStorage.getItem('hv_my_systems_' + id) || 'null'); if (c) setSystems(c); } catch (e) {}
+        sbc.rpc('hv_my_systems').then(({ data: d, error }) => { if (error || !d) return; setSystems(d); try { localStorage.setItem('hv_my_systems_' + id, JSON.stringify(d)); } catch (e) {} });
+      }, [session && session.user.id]);
 
       const toast = useCallback((text, kind = 'ok') => { const id = Math.random(); setToasts((t) => [...t, { id, text, kind }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 6000 : 2500); }, []);
       const go = useCallback((page, id = null) => { setRoute({ page, id }); setMore(false); window.scrollTo(0, 0); }, []);
@@ -393,7 +400,7 @@
             <aside className="no-print fixed inset-y-0 hidden w-56 flex-col bg-brand-800 p-3 md:flex">
               <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-1"><img src={LOGO_MARK} alt="Home Vacation" className="h-full w-full object-contain" /></div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
               <nav className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
-              <div className="mb-3 border-t border-white/10 pt-3"><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
+              <div className={`mb-3 border-t border-white/10 pt-3 ${systems && HV_APPS.some((a) => systems[a[2]]) ? '' : 'hidden'}`}><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
               <div className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
                 <button onClick={() => sbc.auth.signOut()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-brand-100 hover:bg-white/10"><Icon name="logout" className="h-4 w-4" />Sign out</button></div>
             </aside>
@@ -431,7 +438,7 @@
                 <div className="safe-bottom w-full rounded-t-2xl bg-white p-3" onClick={(e) => e.stopPropagation()}>
                   <div className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
                   {nav.slice(4).map((n) => <button key={n[0]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
-                  <div className="my-1 border-t border-slate-100 pt-1">{HV_APPS.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
+                  <div className="my-1 border-t border-slate-100 pt-1">{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
                   <button onClick={() => sbc.auth.signOut()} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-rose-700 hover:bg-rose-50"><Icon name="logout" />Sign out</button>
                 </div>
               </div>

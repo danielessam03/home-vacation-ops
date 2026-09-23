@@ -14,6 +14,9 @@ WP_CPT = "unit"
 # Free Workers plan allows 50 outbound requests per run. 25 page fetches keeps the run inside that.
 # The first backfill of ~500 existing pages therefore takes about a day of hourly runs. On a paid plan raise this to 300.
 MAX_PAGE_FETCHES = "25"
+# E-mail task messages via Resend: set EMAIL_ENABLED = "true" once RESEND_API_KEY is stored and the sending domain is verified
+EMAIL_ENABLED = "false"
+EMAIL_FROM = "Home Vacation Tasks <tasks@home-vacation.com>"
 WHATSAPP_ENABLED = "false"
 # WhatsApp template used for task messages (create it in Meta Business > WhatsApp > Message templates, category Utility)
 WHATSAPP_TASK_TEMPLATE = "hv_task_assigned"
@@ -22,5 +25,6 @@ WHATSAPP_TEMPLATE_LANG = "ar"
 # Secrets — set with:  npx wrangler secret put NAME
 #   SUPABASE_URL
 #   SUPABASE_SERVICE_KEY
+#   RESEND_API_KEY              (e-mail task messages)
 #   WHATSAPP_TOKEN              (only when WhatsApp is enabled)
 #   WHATSAPP_PHONE_NUMBER_ID    (only when WhatsApp is enabled)

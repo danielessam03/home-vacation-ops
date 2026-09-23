@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -161,6 +161,7 @@ r = await db.query(`select (select count(*) from ops_profiles)::int p, (select c
 ok('ops staff see colleagues via ops_profiles but still only their own app_users row; CEO defaults to admin', r.rows[0].p === 5 && r.rows[0].a === 1 && r.rows[0].ceo_role === 'admin', JSON.stringify(r.rows[0]));
 
 // ---- WhatsApp outbox (sql/013)
+await asService(); await db.exec(`update app_users set email='de1@hv.local' where id='${D1}'`);
 await asService();
 r = await db.query(`select hv_phone_e164('01275740781') a, hv_phone_e164('+20 128 209 9770') b, hv_phone_e164('201206609198') c, hv_phone_e164('') d, (select phone from app_users where email='de2@x.com') e`);
 ok('phones normalised to E.164 (01… -> +201…)', r.rows[0].a === '+201275740781' && r.rows[0].b === '+201282099770' && r.rows[0].c === '+201206609198' && r.rows[0].d === null && r.rows[0].e === '+201001234567', JSON.stringify(r.rows[0]));
@@ -172,7 +173,15 @@ await asService();
 r = await db.query(`select status, skip_reason, phone, url from hv_notifications where entity_id='${NT}'`);
 ok('task handed to D2 => pending WhatsApp with deep link', r.rows.length === 1 && r.rows[0].status === 'pending' && r.rows[0].phone === '+201001234567' && r.rows[0].url === 'https://home-vacation-ops.pages.dev/#task/' + NT, JSON.stringify(r.rows[0]));
 r = await db.query(`select status, skip_reason from hv_notifications where title like '%My own note%'`); ok('task given to yourself => skipped', r.rows[0].status === 'skipped' && r.rows[0].skip_reason === 'assigned to self');
-r = await db.query(`select status, skip_reason from hv_notifications where title like '%without a phone%'`); ok('no phone in HR => skipped, reason recorded', r.rows[0].status === 'skipped' && /no phone/.test(r.rows[0].skip_reason));
+r = await db.query(`select status, skip_reason from hv_notifications where title like '%without a phone%'`); ok('no real e-mail or phone in HR => skipped, reason recorded', r.rows[0].status === 'skipped' && /no real e-mail or phone/.test(r.rows[0].skip_reason));
+await asService();
+r = await db.query(`select hv_email_real('lucy@hv-crm.local') a, hv_email_real(' Lucy@Home-Vacation.com ') b, hv_email_real('x') c`);
+ok('placeholder @hv.local addresses are not real; real ones are lower-cased', r.rows[0].a === null && r.rows[0].b === 'lucy@home-vacation.com' && r.rows[0].c === null, JSON.stringify(r.rows[0]));
+await db.exec(`update app_users set email='de1@home-vacation.com' where id='${D1}'`);
+await asUser(M); await db.query(`insert into ops_tasks (title,assigned_to,created_by) values ('E-mail only person','${D1}','${M}')`); await asService();
+r = await db.query(`select status, email, phone from hv_notifications where title like '%E-mail only%'`);
+ok('a person with a real e-mail but no phone is queued for e-mail', r.rows[0].status === 'pending' && r.rows[0].email === 'de1@home-vacation.com' && r.rows[0].phone === null, JSON.stringify(r.rows[0]));
+await db.exec(`update app_users set email='de1@hv.local' where id='${D1}'`);
 await asUser(D1); await db.exec(`update ops_tasks set title='Call the owner (edited)' where id='${NT}'`); await asService();
 r = await db.query(`select count(*)::int n from hv_notifications where entity_id='${NT}'`); ok('editing the task without re-assigning sends nothing new', r.rows[0].n === 1);
 await asUser(D2); await expectErr('staff cannot write the outbox directly', `insert into hv_notifications (system,title,url) values ('ops','x','y')`, /permission denied/);

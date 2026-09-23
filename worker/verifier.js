@@ -347,7 +347,7 @@ async function matchListings(env, { table = 'ops_listings', index = 'ops_wp_list
       verified++;
     }
   }
-  if (alerts.length) await sb(env, 'ops_alerts?on_conflict=dedupe_key', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: alerts });
+  if (alerts.length) await sb(env, 'ops_alerts?on_conflict=dedupe_key', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: alerts.map((x) => ({ level: x.level, title: x.title, body: x.body || null, entity_type: x.entity_type, entity_id: x.entity_id, target_user: x.target_user || null, target_role: null, dedupe_key: x.dedupe_key })) });
   return verified;
 }
 
@@ -434,10 +434,12 @@ async function raiseAlerts(env) {
   }
 
   if (!alerts.length) return 0;
+  // PostgREST bulk insert needs identical keys on every row
+  const shaped = alerts.map((x) => ({ level: x.level, title: x.title, body: x.body || null, entity_type: x.entity_type || null, entity_id: x.entity_id || null, target_user: x.target_user || null, target_role: x.target_role || null, dedupe_key: x.dedupe_key }));
   let created = [];
-  for (let i = 0; i < alerts.length; i += 200) {
+  for (let i = 0; i < shaped.length; i += 200) {
     const rowsIn = await sb(env, 'ops_alerts?on_conflict=dedupe_key', { method: 'POST',
-      prefer: 'resolution=ignore-duplicates,return=representation', body: alerts.slice(i, i + 200) });
+      prefer: 'resolution=ignore-duplicates,return=representation', body: shaped.slice(i, i + 200) });
     created = created.concat(rowsIn || []);
   }
   await pushWhatsApp(env, created.filter((a) => a.level === 'critical'));

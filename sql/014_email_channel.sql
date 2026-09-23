@@ -8,7 +8,11 @@ alter table public.hv_notifications add column if not exists sent_via text;     
 
 create or replace function public.hv_email_real(p text) returns text
 language sql immutable as $$
-  select case when p is null or btrim(p) = '' or lower(btrim(p)) !~ '^[^@\s]+@[^@\s]+\.[a-z]{2,}
+  select case
+    when p is null or btrim(p) = '' then null
+    when lower(btrim(p)) !~ '^[^@\s]+@[^@\s]+\.[a-z]{2,}$' then null
+    when lower(btrim(p)) ~ '\.local$' then null
+    else lower(btrim(p)) end
 $$;
 
 create or replace function public.hv_notify(p_recipient uuid, p_system text, p_entity_type text, p_entity_id text,

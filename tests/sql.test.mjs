@@ -20,6 +20,7 @@ await db.exec(`
   -- minimal stand-ins for the HR tables HV Ops plugs into
   create table public.app_users (id uuid primary key references auth.users(id), email text, full_name_en text, full_name_ar text, role text not null default 'staff',
     phone text, is_active boolean not null default true, username text, created_at timestamptz default now());
+  create table public.hv_task_types (id bigint primary key, title text);
   alter table public.app_users enable row level security;
   create policy self_only on public.app_users for select to authenticated using (id = auth.uid());
   create table public.employees (id uuid primary key default gen_random_uuid(), user_id uuid, status text default 'active');
@@ -33,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -49,6 +50,7 @@ await db.exec(`insert into auth.users (id,email) values
   ('00000000-0000-0000-0000-00000000000a','admin@x.com','Daniel','ceo',true,null),('00000000-0000-0000-0000-00000000000b','mgr@x.com','Mona','manager',true,'manager'),
   ('00000000-0000-0000-0000-00000000000c','de1@x.com','de1','staff',true,'data_entry'),('00000000-0000-0000-0000-00000000000d','de2@x.com','de2','staff',true,'data_entry'),
   ('00000000-0000-0000-0000-00000000000e','mk@x.com','mk','staff',true,'marketing'),('00000000-0000-0000-0000-00000000000f','hronly@x.com','HR only','hr',false,null);
+  update app_users set phone = '01001234567' where email = 'de2@x.com'; update app_users set phone = '+201000000001' where email = 'mk@x.com';
   insert into employees (user_id) select id from app_users;`);
 let r = await db.query(`select my_role() hr_fn, (select count(*) from information_schema.columns where table_name='tasks' and column_name='hr_marker')::int t`);
 ok("HR's own my_role() and tasks table are untouched", r.rows[0].hr_fn === 'hr-owned' && r.rows[0].t === 1);
@@ -157,6 +159,34 @@ r = await db.query(`select (select count(*) from ops_listings)::int l, (select c
 await asUser(D1);
 r = await db.query(`select (select count(*) from ops_profiles)::int p, (select count(*) from app_users)::int a, (select role from ops_profiles where email='admin@x.com') ceo_role`);
 ok('ops staff see colleagues via ops_profiles but still only their own app_users row; CEO defaults to admin', r.rows[0].p === 5 && r.rows[0].a === 1 && r.rows[0].ceo_role === 'admin', JSON.stringify(r.rows[0]));
+
+// ---- WhatsApp outbox (sql/013)
+await asService();
+r = await db.query(`select hv_phone_e164('01275740781') a, hv_phone_e164('+20 128 209 9770') b, hv_phone_e164('201206609198') c, hv_phone_e164('') d, (select phone from app_users where email='de2@x.com') e`);
+ok('phones normalised to E.164 (01… -> +201…)', r.rows[0].a === '+201275740781' && r.rows[0].b === '+201282099770' && r.rows[0].c === '+201206609198' && r.rows[0].d === null && r.rows[0].e === '+201001234567', JSON.stringify(r.rows[0]));
+await asUser(M);
+r = await db.query(`insert into ops_tasks (title,assigned_to,created_by,due_at) values ('Call the owner','${D2}','${M}', now() + interval '1 day') returning id`); const NT = r.rows[0].id;
+await db.query(`insert into ops_tasks (title,assigned_to,created_by) values ('My own note','${M}','${M}')`);
+await db.query(`insert into ops_tasks (title,assigned_to,created_by) values ('For someone without a phone','${D1}','${M}')`);
+await asService();
+r = await db.query(`select status, skip_reason, phone, url from hv_notifications where entity_id='${NT}'`);
+ok('task handed to D2 => pending WhatsApp with deep link', r.rows.length === 1 && r.rows[0].status === 'pending' && r.rows[0].phone === '+201001234567' && r.rows[0].url === 'https://home-vacation-ops.pages.dev/#task/' + NT, JSON.stringify(r.rows[0]));
+r = await db.query(`select status, skip_reason from hv_notifications where title like '%My own note%'`); ok('task given to yourself => skipped', r.rows[0].status === 'skipped' && r.rows[0].skip_reason === 'assigned to self');
+r = await db.query(`select status, skip_reason from hv_notifications where title like '%without a phone%'`); ok('no phone in HR => skipped, reason recorded', r.rows[0].status === 'skipped' && /no phone/.test(r.rows[0].skip_reason));
+await asUser(D1); await db.exec(`update ops_tasks set title='Call the owner (edited)' where id='${NT}'`); await asService();
+r = await db.query(`select count(*)::int n from hv_notifications where entity_id='${NT}'`); ok('editing the task without re-assigning sends nothing new', r.rows[0].n === 1);
+await asUser(D2); await expectErr('staff cannot write the outbox directly', `insert into hv_notifications (system,title,url) values ('ops','x','y')`, /permission denied/);
+r = await db.query(`select count(*)::int n from hv_notifications`); ok('staff see only their own messages', r.rows[0].n === 1);
+await asService();
+// uploader (D2) is told when a listing becomes ready; entered_by (D1) is told when it is rejected
+await asUser(D1);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,owner_name,entered_by,assigned_to,title,area_sqm,building_levels,floor,bedrooms,bathrooms,balconies,furnished,is_exclusive,view_type,price,currency,facilities,selling_points,cover_photo_belongs)
+  values ('Hadaba','Apartment','sale','owner','x','Mr Y','${D1}','${D2}','Notify me',80,1,1,1,1,1,true,false,'Sea view',1,'EUR','{Pool}','sp',true) returning id`); const NL = r.rows[0].id;
+await asUser(M); await db.exec(`update ops_listings set media_uploaded=true where id='${NL}'`); await asUser(D1); await db.exec(`update ops_listings set status='ready_to_publish' where id='${NL}'`);
+await asUser(M); await db.exec(`update ops_listings set status='rejected', rejection_reason='blurry photos' where id='${NL}'`); await asService();
+r = await db.query(`select recipient, title, status, skip_reason from hv_notifications where entity_id='${NL}' order by created_at`);
+ok('ready->uploader (pending) and rejected->entered_by (skipped: no phone) land in the outbox', r.rows.some((x) => /is ready/.test(x.title) && x.recipient === D2 && x.status === 'pending') && r.rows.some((x) => /was rejected/.test(x.title) && x.recipient === D1 && x.status === 'skipped'), JSON.stringify(r.rows.map((x) => [x.title.slice(0, 40), x.status])));
+await db.exec(`delete from kpi_entries where external_id like '%' || '${NL}'; update ops_listings set status='archived' where id='${NL}'`);
 
 // ---- needs photography: request -> shot -> manager approves -> listing created with the approval attached
 await asUser(D1);

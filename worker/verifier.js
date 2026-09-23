@@ -21,6 +21,7 @@ const CPT_GUESSES = ['unit', 'units', 'properties', 'property', 'listings', 'lis
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === '0 22 * * *') ctx.waitUntil(generateRecurringTasks(env));
+    else if (event.cron === '*/5 * * * *') ctx.waitUntil(drainNotifications(env));
     else ctx.waitUntil(runVerifier(env));
   },
 
@@ -37,6 +38,15 @@ export default {
     const path = new URL(request.url).pathname.replace(/\/+$/, '');
     try {
       if (path === '/health' || path === '') return json({ ok: true, service: 'hv-ops-verifier' });
+      // The link inside every WhatsApp message: /go/<notification id> -> the task in the right system (tap is recorded)
+      if (path.startsWith('/go/') && request.method === 'GET') {
+        const id = path.slice(4);
+        if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Not found' }, 404);
+        const rows = await sb(env, `hv_notifications?id=eq.${id}&select=url,opened_at`);
+        if (!rows[0]) return json({ error: 'Not found' }, 404);
+        if (!rows[0].opened_at) await sb(env, `hv_notifications?id=eq.${id}`, { method: 'PATCH', body: { opened_at: new Date().toISOString() } }).catch(() => {});
+        return new Response(null, { status: 302, headers: { location: rows[0].url, 'cache-control': 'no-store' } });
+      }
       if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
 
       const caller = await authCaller(request, env);
@@ -45,6 +55,10 @@ export default {
       if (path === '/run') {
         if (!['admin', 'manager'].includes(caller.role)) return json({ error: 'Managers only' }, 403);
         return json(await runVerifier(env));
+      }
+      if (path === '/send-notifications') {
+        if (!['admin', 'manager'].includes(caller.role)) return json({ error: 'Managers only' }, 403);
+        return json(await drainNotifications(env));
       }
       if (path === '/run-recurring') {
         if (!['admin', 'manager'].includes(caller.role)) return json({ error: 'Managers only' }, 403);
@@ -450,6 +464,46 @@ export async function sendWhatsApp(env, phone, template, vars) {
   });
   if (!res.ok) throw new Error(`WhatsApp ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return { sent: true };
+}
+
+// =====================================================================================
+// Task messages (all systems): hv_notifications outbox -> WhatsApp template "hv_task_assigned"
+//   body {{1}} = first name, {{2}} = system, {{3}} = task title;  URL button suffix {{1}} = notification id (-> /go/<id>)
+// =====================================================================================
+const SYSTEM_LABEL = { hr: 'HR', maint: 'Maintenance', crm: 'CRM', ops: 'HV Ops' };
+export async function drainNotifications(env) {
+  const out = { enabled: env.WHATSAPP_ENABLED === 'true', sent: 0, failed: 0, pending: 0 };
+  const rows = await sb(env, 'hv_notifications?status=eq.pending&attempts=lt.5&order=created_at.asc&limit=25&select=id,recipient,phone,system,title,body,url');
+  out.pending = rows.length;
+  if (!out.enabled || !rows.length) return out;
+  const people = await sb(env, 'app_users?select=id,full_name_en,full_name_ar,username&is_active=eq.true');
+  const nameOf = (id) => { const p = people.find((x) => x.id === id); return p ? (p.full_name_en || p.full_name_ar || p.username || '').split(' ')[0] : ''; };
+  for (const n of rows) {
+    try {
+      const res = await fetch(`https://graph.facebook.com/v20.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${env.WHATSAPP_TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp', to: String(n.phone).replace(/[^\d]/g, ''), type: 'template',
+          template: { name: env.WHATSAPP_TASK_TEMPLATE || 'hv_task_assigned', language: { code: env.WHATSAPP_TEMPLATE_LANG || 'ar' },
+            components: [
+              { type: 'body', parameters: [nameOf(n.recipient) || 'there', SYSTEM_LABEL[n.system] || n.system, n.title].map((t) => ({ type: 'text', text: String(t).replace(/\s+/g, ' ').slice(0, 300) })) },
+              { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: n.id }] },
+            ] },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data.error && data.error.message) || `WhatsApp ${res.status}`);
+      await sb(env, `hv_notifications?id=eq.${n.id}`, { method: 'PATCH', body: { status: 'sent', sent_at: new Date().toISOString(), provider_id: data.messages && data.messages[0] && data.messages[0].id, error: null, attempts: 1 } });
+      out.sent++;
+    } catch (e) {
+      out.failed++;
+      const cur = await sb(env, `hv_notifications?id=eq.${n.id}&select=attempts`);
+      const attempts = ((cur[0] && cur[0].attempts) || 0) + 1;
+      await sb(env, `hv_notifications?id=eq.${n.id}`, { method: 'PATCH', body: { attempts, error: String(e.message || e).slice(0, 300), status: attempts >= 5 ? 'failed' : 'pending' } });
+    }
+  }
+  return out;
 }
 
 async function pushWhatsApp(env, criticalAlerts) {

@@ -130,10 +130,10 @@
       );
     };
 
-    const TasksPage = () => {
+    const TasksPage = ({ openId }) => {          // openId: a task to open straight away (link from a WhatsApp message)
       const { me, data, now, save, toast } = useApp();
       const mgr = isMgr(me);
-      const [who, setWho] = useState(mgr ? null : me.id); const [form, setForm] = useState(false); const [open, setOpen] = useState(null); const [tpl, setTpl] = useState(false); const [col, setCol] = useState('todo');
+      const [who, setWho] = useState(mgr ? null : me.id); const [form, setForm] = useState(false); const [open, setOpen] = useState(openId || null); const [tpl, setTpl] = useState(false); const [col, setCol] = useState('todo');
       const tasks = data.tasks.filter((t) => t.status !== 'cancelled' && (!who || t.assigned_to === who));
       const recentDone = (t) => t.status !== 'done' || now - new Date(t.approved_at || t.updated_at).getTime() < 14 * 864e5;
       const byCol = (k) => tasks.filter((t) => t.status === k && recentDone(t)).sort((a, b) => (new Date(a.due_at || '2999') - new Date(b.due_at || '2999')));

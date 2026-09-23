@@ -134,6 +134,26 @@
       );
     };
 
+    const SYSTEM_NAME = { hr: 'HR', maint: 'Maintenance', crm: 'CRM', ops: 'HV Ops' };
+    const MessagesPanel = () => {
+      const { workerCall, toast, cfg } = useApp();
+      const [rows, setRows] = useState(null); const [busy, setBusy] = useState(false);
+      const load = () => sbc.from('hv_notifications').select('*').order('created_at', { ascending: false }).limit(60).then(({ data: d }) => setRows(d || []));
+      useEffect(() => { load(); }, []);
+      const sendNow = async () => { setBusy(true); const r = await workerCall('/send-notifications'); setBusy(false); if (r) { toast(r.enabled ? `Sent ${r.sent}, failed ${r.failed}` : 'WhatsApp is not switched on yet on the worker — messages stay queued'); load(); } };
+      const st = { pending: 'bg-amber-100 text-amber-800', sent: 'bg-emerald-100 text-emerald-800', failed: 'bg-rose-100 text-rose-800', skipped: 'bg-slate-100 text-slate-600' };
+      return (
+        <Card className="scroll-x p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-brand-800">WhatsApp task messages — all systems</h3><div className="flex gap-2"><Btn kind="ghost" className="!py-1.5" onClick={load}>Refresh</Btn>{cfg.worker_url && <Btn kind="soft" className="!py-1.5" disabled={busy} onClick={sendNow}>Send pending now</Btn>}</div></div>
+          <p className="mb-3 text-xs text-slate-500">Every task handed to a person in Maintenance or HV Ops is queued here and sent as a WhatsApp message with a link to the task. Messages go out every 5 minutes once WhatsApp is switched on. “Skipped” means the person has no phone number in HR, or gave the task to themselves.</p>
+          {!rows ? <p className="text-sm text-slate-500">Loading…</p> : !rows.length ? <p className="text-sm text-slate-400">No messages yet.</p> : (
+            <table className="w-full text-xs"><thead className="text-left text-slate-500"><tr>{['When', 'To', 'System', 'Task', 'Status', 'Opened'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+              <tbody>{rows.map((r) => <tr key={r.id} className="border-t border-slate-100"><td className="whitespace-nowrap px-2 py-1.5">{fmtDateTime(r.created_at)}</td><td className="px-2 py-1.5">{r.phone || '—'}</td><td className="px-2 py-1.5">{SYSTEM_NAME[r.system] || r.system}</td><td className="max-w-[18rem] truncate px-2 py-1.5" title={r.body || ''}>{r.title}</td><td className="px-2 py-1.5"><Badge className={st[r.status]}>{r.status}{r.skip_reason ? ` — ${r.skip_reason}` : r.error ? ` — ${r.error}` : ''}</Badge></td><td className="whitespace-nowrap px-2 py-1.5">{r.opened_at ? fmtDateTime(r.opened_at) : '—'}</td></tr>)}</tbody></table>
+          )}
+        </Card>
+      );
+    };
+
     const VerifierTab = () => {
       const { cfg, data, saveSetting, workerCall, reloadTable, toast } = useApp();
       const [url, setUrl] = useState(cfg.worker_url || ''); const [busy, setBusy] = useState(false);
@@ -146,6 +166,7 @@
             </Field>
             {cfg.worker_url && <div className="mt-3"><Btn kind="soft" onClick={runNow} disabled={busy}>{busy ? 'Running…' : 'Run verifier now'}</Btn></div>}
           </Card>
+          <MessagesPanel />
           <Card className="scroll-x p-4">
             <h3 className="mb-2 text-sm font-semibold text-brand-800">Last runs</h3>
             {!data.verifier_runs.length ? <p className="text-sm text-slate-400">The verifier has not run yet.</p> : (
@@ -166,7 +187,7 @@
       return (
         <div>
           <PageHeader title="Settings" sub="Admin only" />
-          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier']]} />
+          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier & messages']]} />
           {tab === 'users' && <UsersTab />}
           {tab === 'loc' && <KVEditor settingKey="location_codes" nameLabel="Location (as on the website)" codeLabel="Code" hint="First part of the reference code (HD-A-1012-S). Changing a code only affects NEW listings — existing codes never change." />}
           {tab === 'types' && <KVEditor settingKey="unit_type_codes" nameLabel="Unit type" codeLabel="Code" hint="Second part of the reference code." />}
@@ -305,7 +326,10 @@
       }, [session && session.user.id]);
 
       const toast = useCallback((text, kind = 'ok') => { const id = Math.random(); setToasts((t) => [...t, { id, text, kind }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 6000 : 2500); }, []);
-      const go = useCallback((page, id = null) => { setRoute({ page, id }); setMore(false); window.scrollTo(0, 0); }, []);
+      const go = useCallback((page, id = null) => { setRoute({ page, id }); setMore(false); window.scrollTo(0, 0); try { history.replaceState(null, '', '#' + page + (id ? '/' + id : '')); } catch (e) {} }, []);
+      // #listing/<id> · #project/<id> · #task/<id> · #photo · #tasks … (the links inside WhatsApp messages)
+      const routeFromHash = () => { const [p, id] = location.hash.replace(/^#/, '').split('/'); if (!p) return null; if (p === 'task') return { page: 'tasks', id: id || null }; return { page: p, id: id || null }; };
+      useEffect(() => { const r = routeFromHash(); if (r) setRoute(r); const onHash = () => { const x = routeFromHash(); if (x) setRoute(x); }; window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash); }, []);
 
       useEffect(() => {
         if (!connected) return;
@@ -419,7 +443,7 @@
                 {page === 'projects' && <ProjectsPage />}
                 {page === 'photo' && <PhotoRequestsPage />}
                 {page === 'project' && <ProjectDetail key={route.id} id={route.id} />}
-                {page === 'tasks' && <TasksPage />}
+                {page === 'tasks' && <TasksPage key={route.id || ''} openId={route.id} />}
                 {page === 'agencies' && <AgenciesPage />}
                 {page === 'kpis' && <KpisPage />}
                 {page === 'reports' && <ReportsPage />}

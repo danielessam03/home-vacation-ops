@@ -5,7 +5,8 @@ workers_dev = true
 
 [triggers]
 # hourly verifier  +  nightly recurring tasks (22:00 UTC = 00:00 Cairo winter / 01:00 summer)
-crons = ["0 * * * *", "0 22 * * *"]
+# hourly verifier + alerts · nightly recurring tasks · every 5 min: WhatsApp task messages
+crons = ["0 * * * *", "0 22 * * *", "*/5 * * * *"]
 
 [vars]
 WP_BASE_URL = "https://home-vacation.com"
@@ -14,6 +15,9 @@ WP_CPT = "unit"
 # The first backfill of ~500 existing pages therefore takes about a day of hourly runs. On a paid plan raise this to 300.
 MAX_PAGE_FETCHES = "25"
 WHATSAPP_ENABLED = "false"
+# WhatsApp template used for task messages (create it in Meta Business > WhatsApp > Message templates, category Utility)
+WHATSAPP_TASK_TEMPLATE = "hv_task_assigned"
+WHATSAPP_TEMPLATE_LANG = "ar"
 
 # Secrets — set with:  npx wrangler secret put NAME
 #   SUPABASE_URL

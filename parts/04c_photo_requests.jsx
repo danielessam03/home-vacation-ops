@@ -103,7 +103,7 @@
             {can && ['requested', 'scheduled'].includes(r.status) && <Btn className="!py-1.5" onClick={() => onShot(r)}>Photos taken</Btn>}
             {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) toast('Photos approved'); }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
             {!mgr && r.status === 'shot' && <span className="self-center text-xs text-slate-500">Waiting for the manager</span>}
-            {can && ['shot', 'ready'].includes(r.status) && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
+            {((can && r.status === 'shot') || r.status === 'ready') && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
             {r.listing_id && <Btn kind="soft" className="!py-1.5" onClick={() => go('listing', r.listing_id)}>Open listing</Btn>}
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onReason(r, 'cancel')}>Cancel</Btn>}
           </div>

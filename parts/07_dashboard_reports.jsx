@@ -74,7 +74,7 @@
       const stale = open.filter((l) => l.completeness_pct < 100 && now - new Date(l.created_at).getTime() > Number((sla && sla.incomplete_alert) || 24) * 36e5);
       const review = data.tasks.filter((t) => t.status === 'review'); const submitted = data.agency_deliverables.filter((d) => d.status === 'submitted');
       const overdue = data.tasks.filter((t) => isOverdue(t, now));
-      const team = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role)).map((p) => userKpis(p, monthRange(month), data, sla, now));
+      const team = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing', 'manager'].includes(p.role)).map((p) => userKpis(p, monthRange(month), data, sla, now));
       const months6 = [-5, -4, -3, -2, -1, 0].map((n) => addMonths(month, n));
       const trend = months6.map((m) => ({ m, ...listingStats(data.listings.filter((l) => inRange(l.date_received, monthRange(m))), data.listing_channels, sla, now) }));
       const short = (m) => monthLabel(m).slice(0, 3);
@@ -82,6 +82,7 @@
         <div>
           <PageHeader title="Operations dashboard" sub="Red items first" />
           <div className="space-y-4">
+            {(() => { const mineUp = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id); const mineProj = data.projects.filter((p) => p.status === 'ready_to_publish' && p.assigned_to === me.id); return (mineUp.length || mineProj.length) ? <Section title="Ready — waiting for me to upload" count={mineUp.length + mineProj.length} tone="red">{[...withSla(mineUp).map(({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />), ...mineProj.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)]}</Section> : null; })()}
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <Tile label="SLA breached" value={breached.length} tone={breached.length ? 'red' : null} />
               <Tile label="Claimed, not found" value={cnf.length} tone={cnf.length ? 'red' : null} />

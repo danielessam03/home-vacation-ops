@@ -179,7 +179,7 @@
       const mgr = isMgr(me);
       const [month, setMonth] = useState(monthStart()); const [target, setTarget] = useState(null);
       const range = monthRange(month);
-      const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role) && (mgr || p.id === me.id));
+      const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing', 'manager'].includes(p.role) && (mgr || p.id === me.id));
       const rows = useMemo(() => people.map((p) => ({ p, k: userKpis(p, range, data, cfg.sla_hours, now) })), [month, data, now]);
       const board = (title, keep, sortKey, cols) => {
         const rs = rows.filter(keep).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));

@@ -44,7 +44,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.12.0';
+    const APP_VERSION = 'v1.13.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -1273,7 +1273,7 @@
             {can && ['requested', 'scheduled'].includes(r.status) && <Btn className="!py-1.5" onClick={() => onShot(r)}>Photos taken</Btn>}
             {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) toast('Photos approved'); }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
             {!mgr && r.status === 'shot' && <span className="self-center text-xs text-slate-500">Waiting for the manager</span>}
-            {can && ['shot', 'ready'].includes(r.status) && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
+            {((can && r.status === 'shot') || r.status === 'ready') && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
             {r.listing_id && <Btn kind="soft" className="!py-1.5" onClick={() => go('listing', r.listing_id)}>Open listing</Btn>}
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onReason(r, 'cancel')}>Cancel</Btn>}
           </div>
@@ -1769,7 +1769,7 @@ Rules:
       const mgr = isMgr(me);
       const [month, setMonth] = useState(monthStart()); const [target, setTarget] = useState(null);
       const range = monthRange(month);
-      const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role) && (mgr || p.id === me.id));
+      const people = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing', 'manager'].includes(p.role) && (mgr || p.id === me.id));
       const rows = useMemo(() => people.map((p) => ({ p, k: userKpis(p, range, data, cfg.sla_hours, now) })), [month, data, now]);
       const board = (title, keep, sortKey, cols) => {
         const rs = rows.filter(keep).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
@@ -1890,7 +1890,7 @@ Rules:
       const stale = open.filter((l) => l.completeness_pct < 100 && now - new Date(l.created_at).getTime() > Number((sla && sla.incomplete_alert) || 24) * 36e5);
       const review = data.tasks.filter((t) => t.status === 'review'); const submitted = data.agency_deliverables.filter((d) => d.status === 'submitted');
       const overdue = data.tasks.filter((t) => isOverdue(t, now));
-      const team = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing'].includes(p.role)).map((p) => userKpis(p, monthRange(month), data, sla, now));
+      const team = data.profiles.filter((p) => p.is_active && ['data_entry', 'marketing', 'manager'].includes(p.role)).map((p) => userKpis(p, monthRange(month), data, sla, now));
       const months6 = [-5, -4, -3, -2, -1, 0].map((n) => addMonths(month, n));
       const trend = months6.map((m) => ({ m, ...listingStats(data.listings.filter((l) => inRange(l.date_received, monthRange(m))), data.listing_channels, sla, now) }));
       const short = (m) => monthLabel(m).slice(0, 3);
@@ -1898,6 +1898,7 @@ Rules:
         <div>
           <PageHeader title="Operations dashboard" sub="Red items first" />
           <div className="space-y-4">
+            {(() => { const mineUp = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id); const mineProj = data.projects.filter((p) => p.status === 'ready_to_publish' && p.assigned_to === me.id); return (mineUp.length || mineProj.length) ? <Section title="Ready — waiting for me to upload" count={mineUp.length + mineProj.length} tone="red">{[...withSla(mineUp).map(({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />), ...mineProj.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)]}</Section> : null; })()}
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <Tile label="SLA breached" value={breached.length} tone={breached.length ? 'red' : null} />
               <Tile label="Claimed, not found" value={cnf.length} tone={cnf.length ? 'red' : null} />

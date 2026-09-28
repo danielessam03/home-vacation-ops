@@ -7,4 +7,7 @@ sh build.sh
 OUT="$(mktemp -d)"
 cp index.html "$OUT/"
 export CLOUDFLARE_API_TOKEN="$(tr -d '\r\n' < ../home-vacation-hr/.cloudflare_token)" CLOUDFLARE_ACCOUNT_ID=86fec8e85ee5a22498942b31a322b56e
-cd "$OUT" && npx --yes wrangler@latest pages deploy . --project-name home-vacation-ops --branch main --commit-dirty=true
+cd "$OUT"
+# home-vacation-ops.pages.dev = main address; hvops-home-vacation.pages.dev = spare address (added 2026-09-28 because the office
+# connection cannot reach two Cloudflare IPs, 188.114.96.6 / 188.114.97.6, which the main address uses). Keep both up to date.
+for p in home-vacation-ops hvops-home-vacation; do npx --yes wrangler@latest pages deploy . --project-name $p --branch main --commit-dirty=true; done

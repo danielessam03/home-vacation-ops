@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 

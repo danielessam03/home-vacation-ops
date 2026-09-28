@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.14.0';
+    const APP_VERSION = 'v1.15.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -88,7 +88,7 @@
       title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
       building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
       furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', media_uploaded: 'Photos ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited', owner_name: 'Owner name', owner_phone: 'Owner phone',
-      is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', facilities: 'Facilities', selling_points: 'Selling points',
+      is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', price_note: 'Price details (per month, incl. maintenance…)', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
       cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
       source_name: 'Source name (who gave it)', source_contact: 'Source contact', assigned_to: 'Uploader (puts it online)',

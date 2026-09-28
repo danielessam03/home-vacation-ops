@@ -17,7 +17,7 @@
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
       ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
       ['Media', ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
-      ['Commercial', ['price', 'currency', 'is_exclusive']],
+      ['Commercial', ['price', 'currency', 'price_note', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
@@ -127,9 +127,9 @@
     };
 
     const ListingsPage = () => {
-      const { me, data, cfg, now, go, nameOf } = useApp();
+      const { me, data, cfg, now, go, nameOf, toast } = useApp();
       const [q, setQ] = useState(''); const [flt, setFlt] = useState({ status: null, sla: null, location: null, source: null, by: null, comp: null, from: '', to: '' });
-      const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false);
+      const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false); const [basicImp, setBasicImp] = useState(false);
       const [view, setView] = useState('work');      // work | published | closed
       const setFilter = (k, v) => setFlt((p) => ({ ...p, [k]: v }));
       const rows = useMemo(() => {
@@ -158,6 +158,8 @@
         <div>
           <PageHeader title="Listings" sub={`${rows.length} shown`}>
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
+            <Btn kind="ghost" onClick={() => exportBasicInfo(rows.map((x) => x.l), cfg, toast)}>Export Basic Info (.xlsx)</Btn>
+            <Btn kind="soft" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>
             <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>
             <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
           </PageHeader>
@@ -225,6 +227,7 @@
           )}
           {form && <ListingForm onClose={() => setForm(false)} onSaved={(row) => { setForm(false); go('listing', row.id); }} />}
           {imp && <CsvImport onClose={() => setImp(false)} />}
+          {basicImp && <BasicInfoImport onClose={() => setBasicImp(false)} />}
         </div>
       );
     };
@@ -262,6 +265,7 @@
                   <span className="font-mono text-2xl font-black tracking-wide text-slate-900">{l.reference_code}</span>
                   <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn>
                   <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
+                  <Btn kind="ghost" className="!px-2.5 !py-1.5" onClick={() => exportBasicInfo([l], cfg, toast)}>Basic Info .xlsx</Btn>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>

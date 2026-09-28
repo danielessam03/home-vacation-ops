@@ -33,7 +33,7 @@ Rules:
         ['Location', `${l.location}, Hurghada / Red Sea, Egypt`], ['Working title', l.title],
         ['Area', l.area_sqm == null ? null : `${l.area_sqm} sqm`], ['Bedrooms', l.bedrooms == null ? null : (Number(l.bedrooms) === 0 ? 'Studio / no separate bedroom' : l.bedrooms)], ['Bathrooms', l.bathrooms],
         ['Balconies', l.balconies], ['Floor', l.floor == null ? null : aiFloor(l.floor)], ['Building levels', l.building_levels], ['Furnished', l.furnished], ['View', l.view_type],
-        ['Price', l.price == null ? null : `${Number(l.price).toLocaleString('en-US')} ${l.currency || ''}`.trim()], ['Exclusive to Home Vacation', l.is_exclusive ? true : undefined],      // only worth saying when it IS exclusive
+        ['Price', l.price == null ? null : `${Number(l.price).toLocaleString('en-US')} ${l.currency || ''}`.trim()], ['Price details', l.price_note || undefined], ['Exclusive to Home Vacation', l.is_exclusive ? true : undefined],      // only worth saying when it IS exclusive
         ['Facilities', l.facilities], ['Selling points (from our team)', l.selling_points],
         ['Target buyer — nationality', l.buyer_persona_nationality], ['Target buyer — age range', l.buyer_persona_age_range], ['Target buyer — profile', l.buyer_persona_gender],
       ];

@@ -21,13 +21,13 @@
             <Btn kind="ghost" onClick={() => setOnlyUnread(!onlyUnread)}>{onlyUnread ? 'Show all' : 'Unread only'}</Btn>
             <Btn kind="ghost" onClick={() => mark(data.alerts.filter((a) => !a.is_read).map((a) => a.id))}>Mark all read</Btn>
           </PageHeader>
-          {!rows.length ? <Empty>No {onlyUnread ? 'unread ' : ''}alerts.</Empty> : (
+          <div data-tour="alerts-list">{!rows.length ? <Empty>No {onlyUnread ? 'unread ' : ''}alerts.</Empty> : (
             <div className="space-y-2">{rows.map((a) => (
               <Card key={a.id} className={`cursor-pointer border-l-4 p-3 ${ALERT_STYLE[a.level]} ${a.is_read ? 'opacity-60' : ''}`} onClick={() => openAlert(a)}>
                 <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold text-slate-900">{a.title}</div><span className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(a.created_at)}</span></div>
                 {a.body && <div className="mt-0.5 break-words text-sm text-slate-600">{a.body}</div>}
               </Card>))}</div>
-          )}
+          )}</div>
         </div>
       );
     };
@@ -181,13 +181,15 @@
     const SettingsPage = () => {
       const { cfg, data, saveSetting } = useApp();
       const [tab, setTab] = useState('users');
+      useTourAction(Object.fromEntries(['users', 'loc', 'types', 'req', 'sla', 'portals', 'lists', 'metrics', 'agencies', 'verifier'].map((k) => [`settings-tab-${k}`, () => setTab(k)])));
       const [preq, setPreq] = useState(cfg.project_required_fields || []); const [psla, setPsla] = useState(cfg.project_sla_hours || {});
       const [sla, setSla] = useState(cfg.sla_hours || {}); const [req, setReq] = useState(cfg.required_fields || []); const [chans, setChans] = useState(cfg.default_channels || []); const [labels, setLabels] = useState(cfg.portal_labels || {});
       const candidates = Object.keys(FIELD_LABEL).filter((k) => !['date_received', 'source_type', 'source_name', 'assigned_to'].includes(k));
       return (
         <div>
           <PageHeader title="Settings" sub="Admin only" />
-          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier & messages']]} />
+          <div data-tour="settings-tabs"><Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier & messages']]} /></div>
+          <div data-tour="settings-body">
           {tab === 'users' && <UsersTab />}
           {tab === 'loc' && <KVEditor settingKey="location_codes" nameLabel="Location (as on the website)" codeLabel="Code" hint="First part of the reference code (HD-A-1012-S). Changing a code only affects NEW listings — existing codes never change." />}
           {tab === 'types' && <KVEditor settingKey="unit_type_codes" nameLabel="Unit type" codeLabel="Code" hint="Second part of the reference code." />}
@@ -225,6 +227,7 @@
           {tab === 'metrics' && <MetricDefsEditor />}
           {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
           {tab === 'verifier' && <VerifierTab />}
+          </div>
         </div>
       );
     };
@@ -398,6 +401,43 @@
         } catch (e) { toast(String(e.message || e), 'error'); return null; }
       }, [cfg.worker_url, toast]);
 
+      // Guide tour — the shared engine (hv-shared.pages.dev/hv-tour.js, loaded async in <head>) reads the live values through this ref.
+      // Optional: if the script never loads, nothing here changes how the app works. Started on the script's load event,
+      // with a 1-second poll as a fallback that gives up after about 60 seconds.
+      const tourRef = useRef({}); const phoneNavRef = useRef(null);
+      tourRef.current = { ...tourRef.current, me, go, more, data };
+      useEffect(() => {
+        let done = false, tries = 0, timer = null, moreByTour = false;
+        const onTour = (e) => {        // steps about a listing / project page open the most recent one (read only)
+          const a = e.detail && e.detail.action; const { data: d, go: nav } = tourRef.current; if (!d || !nav) return;
+          if (a === 'open-more' && window.innerWidth < 768 && !tourRef.current.more) { moreByTour = true; setMore(true); }     // phone: roles & systems live in "More"
+          if (a === 'close' && moreByTour) { moreByTour = false; setMore(false); }
+          if (a === 'open-first-listing') { const l = d.listings.find((x) => bucketOf(x.status) === 'work') || d.listings[0]; if (l) nav('listing', l.id); }
+          if (a === 'open-first-project') { const x = d.projects.find((y) => bucketOf(y.status) === 'work') || d.projects[0]; if (x) nav('project', x.id); }
+        };
+        window.addEventListener('hv-tour', onTour);
+        const boot = () => {
+          if (done || !window.HVTour) return done;
+          done = true; clearInterval(timer);
+          window.HVTour.init({
+            app: 'ops', color: '#0f3d4c', userId: () => (tourRef.current.me && tourRef.current.me.id) || null, lang: () => 'en',
+            // "Explain this page" on a listing / project opens that chapter; during the tour the real page is reported
+            getPage: () => { const pg = tourRef.current.page; return !document.querySelector('.hvt-root') && ({ listing: 'listings', project: 'projects' })[pg] || pg; },
+            goPage: (k) => tourRef.current.go(k), chapters: HV_TOUR_CHAPTERS, steps: HV_TOUR_STEPS,
+            // phone: sit 12px above the bottom tab bar (its height includes the iPhone safe area); desktop: nothing floats at the bottom right
+            bottomOffset: { get mobile() { const n = phoneNavRef.current; return (n && n.offsetHeight ? n.offsetHeight : 57) + 12; }, desktop: 24 },
+            hidden: () => !!tourRef.current.more,       // the phone "More" sheet covers the bottom of the screen
+          });
+          return true;
+        };
+        const tag = document.getElementById('hv-tour-js');
+        if (!boot()) {
+          if (tag) tag.addEventListener('load', boot);
+          timer = setInterval(() => { if (boot() || ++tries >= 60) clearInterval(timer); }, 1000);
+        }
+        return () => { clearInterval(timer); if (tag) tag.removeEventListener('load', boot); window.removeEventListener('hv-tour', onTour); };
+      }, []);
+
       if (!connected) return <ConnectScreen onDone={() => setConnected(true)} />;
       if (session === undefined) return <div id="boot">Loading HV Ops…</div>;
       if (!session) return <Login notice={notice} onReconfigure={() => { try { localStorage.removeItem('hvops_sb_url'); localStorage.removeItem('hvops_sb_key'); } catch (e) {} sbc = null; setConnected(false); }} />;
@@ -407,13 +447,14 @@
       const nav = NAV.filter((n) => n[3](me));
       const unread = data.alerts.filter((a) => !a.is_read); const critical = unread.filter((a) => a.level === 'critical');
       const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' || route.page === 'project' ? route.page : 'dashboard';
+      tourRef.current.page = page;
       const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
       const navBtn = (n, mobile) => {
         const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : n[0] === 'photo' ? data.photo_requests.filter((r) => isMgr(me) ? ['requested', 'shot'].includes(r.status) : (r.assigned_to === me.id && ['requested', 'scheduled'].includes(r.status))).length : 0;
         return mobile ? (
-          <button key={n[0]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
+          <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
         ) : (
-          <button key={n[0]} onClick={() => go(n[0])} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'}`}><Icon name={n[2]} /><span className="flex-1 text-left">{n[1]}</span>{count > 0 && <span className="rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">{count}</span>}</button>
+          <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'}`}><Icon name={n[2]} /><span className="flex-1 text-left">{n[1]}</span>{count > 0 && <span className="rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">{count}</span>}</button>
         );
       };
 
@@ -423,9 +464,9 @@
             {/* desktop sidebar */}
             <aside className="no-print fixed inset-y-0 hidden w-56 flex-col bg-brand-800 p-3 md:flex">
               <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-1"><img src={LOGO_MARK} alt="Home Vacation" className="h-full w-full object-contain" /></div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
-              <nav className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
-              <div className={`mb-3 border-t border-white/10 pt-3 ${systems && HV_APPS.some((a) => systems[a[2]]) ? '' : 'hidden'}`}><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
-              <div className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
+              <nav data-tour="menu" className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
+              <div data-tour="systems" className={`mb-3 border-t border-white/10 pt-3 ${systems && HV_APPS.some((a) => systems[a[2]]) ? '' : 'hidden'}`}><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
+              <div data-tour="user-card" className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
                 <button onClick={() => sbc.auth.signOut()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-brand-100 hover:bg-white/10"><Icon name="logout" className="h-4 w-4" />Sign out</button></div>
             </aside>
 
@@ -453,16 +494,18 @@
             </main>
 
             {/* phone bottom tabs */}
-            <nav className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white md:hidden">
+            <nav ref={phoneNavRef} className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white md:hidden">
+              <div data-tour="menu" className="flex w-full">{/* tour anchor inside the fixed bar: the engine skips position:fixed elements themselves */}
               {nav.slice(0, 4).map((n) => navBtn(n, true))}
               <button onClick={() => setMore(true)} className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${nav.slice(4).some((n) => n[0] === page) ? 'text-brand-700' : 'text-slate-500'}`}><Icon name="more" />More</button>
+              </div>
             </nav>
             {more && (
               <div className="no-print fixed inset-0 z-40 flex items-end bg-slate-900/50 md:hidden" onClick={() => setMore(false)}>
                 <div className="safe-bottom w-full rounded-t-2xl bg-white p-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
-                  {nav.slice(4).map((n) => <button key={n[0]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
-                  <div className="my-1 border-t border-slate-100 pt-1">{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
+                  <div data-tour="user-card" className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
+                  {nav.slice(4).map((n) => <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
+                  <div data-tour="systems" className="my-1 border-t border-slate-100 pt-1">{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
                   <button onClick={() => sbc.auth.signOut()} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-rose-700 hover:bg-rose-50"><Icon name="logout" />Sign out</button>
                 </div>
               </div>

@@ -80,7 +80,7 @@
         <Modal wide title={isEdit ? `Edit ${project.reference_code}` : 'New project'} onClose={onClose} footer={<>
           <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
           <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate Project ID'}</Btn></>}>
-          <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
+          <div data-tour="pform-top" className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
             <div className="mb-1.5 flex items-center justify-between text-sm"><span className="font-semibold text-slate-800">Completeness {comp.pct}%</span>{comp.missing.length > 0 && <Badge className="bg-rose-600 text-white">{comp.missing.length} missing</Badge>}</div>
             <Meter value={comp.pct} />
           </div>
@@ -102,6 +102,7 @@
     const ProjectsPage = () => {
       const { data, cfg, now, go, nameOf } = useApp();
       const [q, setQ] = useState(''); const [status, setStatus] = useState(null); const [form, setForm] = useState(false); const [view, setView] = useState('work');
+      useTourAction({ 'open-new-project': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
         return data.projects.map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter(({ p }) => {
@@ -117,7 +118,7 @@
         <div>
           <PageHeader title="Projects" sub={`${rows.length} shown · Project ID = P-location-serial-S`}>
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
-            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New project</Btn>
+            <Btn data-tour="new-project" onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New project</Btn>
           </PageHeader>
           <Tabs value={view} onChange={(v) => { setView(v); setStatus(null); }} tabs={bucketTabs(data.projects)} />
           <div className="no-print mb-3 flex gap-2">
@@ -170,7 +171,7 @@
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn></div>
+                <div data-tour="project-code" className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn></div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress <b>Project ID</b> field. If it is left empty the website invents a PRJ-… number and the project can never be verified.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{p.name}</h2>
                 <div className="text-sm text-slate-700">{p.developer || 'Developer —'} · {p.location}</div>

@@ -30,7 +30,7 @@
       const myKpi = useMemo(() => userKpis(me, monthRange(month), data, sla, now), [data, now]);
       const taskLine = (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className={`whitespace-nowrap text-xs ${isOverdue(t, now) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{t.due_at ? fmtDateTime(t.due_at) : ''}</span></button>;
       const kpiTiles = (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div data-tour="dash-top" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {(isMgr(me) ? [] : kpiDefsForUser(cfg, me.role, myKpi)).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
         </div>
       );
@@ -49,7 +49,7 @@
             <PageHeader title={`Hello, ${(me.full_name || '').split(' ')[0] || 'there'}`} sub={`${monthLabel(month)} · month to date`} />
             <div className="space-y-4">
               {kpiTiles}
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div data-tour="dash-lists" className="grid gap-4 lg:grid-cols-2">
                 {myShoots.length > 0 && <Section title="Needs photography — mine" count={myShoots.length} tone="red" action={<button className="text-xs text-brand-700" onClick={() => go('photo')}>Open</button>}>{myShoots.slice(0, 6).map((r) => <button key={r.id} onClick={() => go('photo')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="min-w-0 truncate">{r.owner_name} · {r.location}</span><Badge className={PHOTO_STATUS[r.status][1]}>{r.status === 'scheduled' ? fmtDateTime(r.scheduled_at) : PHOTO_STATUS[r.status][0]}</Badge></button>)}</Section>}
                 {me.role === 'data_entry' && projToUpload.length > 0 && <Section title="Projects ready — waiting for me to upload" count={projToUpload.length} tone="red">{projToUpload.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
                 {me.role === 'data_entry' && myProjects.length > 0 && <Section title="My projects in progress" count={myProjects.length}>{myProjects.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {p.completeness_pct}% complete</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
@@ -83,7 +83,7 @@
           <PageHeader title="Operations dashboard" sub="Red items first" />
           <div className="space-y-4">
             {(() => { const mineUp = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id); const mineProj = data.projects.filter((p) => p.status === 'ready_to_publish' && p.assigned_to === me.id); return (mineUp.length || mineProj.length) ? <Section title="Ready — waiting for me to upload" count={mineUp.length + mineProj.length} tone="red">{[...withSla(mineUp).map(({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />), ...mineProj.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)]}</Section> : null; })()}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div data-tour="dash-top" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <Tile label="SLA breached" value={breached.length} tone={breached.length ? 'red' : null} />
               <Tile label="Claimed, not found" value={cnf.length} tone={cnf.length ? 'red' : null} />
               <Tile label={`Incomplete > ${(sla && sla.incomplete_alert) || 24}h`} value={stale.length} tone={stale.length ? 'red' : null} />
@@ -92,7 +92,7 @@
             </div>
             {(() => { const bad = data.projects.filter((p) => !['archived', 'rejected', 'verified_live', 'on_hold'].includes(p.status)).map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter((x) => x.s.state === 'red' || x.s.claimedNotFound); return bad.length ? <Section title="Projects — SLA breached or claimed but not found" count={bad.length} tone="red">{bad.map(({ p, s }) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {s.claimedNotFound ? 'claimed, not found' : LISTING_STATUS[p.status][0]} · {nameOf(p.assigned_to || p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section> : null; })()}
             {(() => { const wait = data.photo_requests.filter((r) => r.status === 'shot'); const unsched = data.photo_requests.filter((r) => r.status === 'requested' || shootOverdue(r, now)); return (wait.length || unsched.length) ? <Section title="Photography" count={wait.length + unsched.length} tone="red" action={<button className="text-xs text-brand-700" onClick={() => go('photo')}>Open</button>}>{[...wait.map((r) => [r, 'photos waiting for your approval']), ...unsched.map((r) => [r, r.status === 'requested' ? `not scheduled · waiting ${waitingDays(r, now)}d` : 'shoot overdue'])].slice(0, 8).map(([r, note]) => <button key={r.id + note} onClick={() => go('photo')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="min-w-0 truncate">{photoNo(r)} · {r.owner_name} · {r.location}</span><span className="whitespace-nowrap text-xs text-rose-700">{note}</span></button>)}</Section> : null; })()}
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div data-tour="dash-lists" className="grid gap-4 lg:grid-cols-2">
               <Section title="Breached SLAs (> 72h, not live)" count={breached.length} tone="red">{limitList(breached, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.assigned_to || l.entered_by)} · ${LISTING_STATUS[l.status][0]}`} />, 'No breaches.')}</Section>
               <Section title="Claimed published — NOT found on website" count={cnf.length} tone="red">{limitList(cnf, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} claimed ${fmtDateTime(l.date_published_claimed)}`} />, 'Every claim has been verified.')}</Section>
               <Section title="Incomplete for more than 24h" count={stale.length} tone="red">{limitList(stale, (l) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} · ${l.completeness_pct}% · missing ${(l.missing_fields || []).length}`} />, 'None.')}</Section>
@@ -195,10 +195,10 @@
       return (
         <div>
           <PageHeader title="Reports" sub={snap ? `Frozen snapshot · ${snap.title} · saved ${fmtDateTime(snap.created_at)}` : `${report.from} → ${report.to}`}>
-            <Btn kind="ghost" onClick={exportCsv}>CSV</Btn><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print / PDF</Btn>
+            <Btn kind="ghost" data-tour="report-export" onClick={exportCsv}>CSV</Btn><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print / PDF</Btn>
             {!snap && isMgr(me) && <Btn onClick={freeze}>Freeze snapshot</Btn>}{snap && <Btn onClick={() => setSnap(null)}>Back to live</Btn>}
           </PageHeader>
-          {!snap && <Tabs value={preset} onChange={setPreset} tabs={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom range']]} />}
+          {!snap && <div data-tour="report-presets"><Tabs value={preset} onChange={setPreset} tabs={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom range']]} /></div>}
           <div className="no-print mb-4 flex flex-wrap items-end gap-3">
             {!snap && preset === 'monthly' && <MonthPicker value={month} onChange={setMonth} />}
             {!snap && preset === 'custom' && <><Field label="From"><input type="date" className={inputCls()} value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /></Field><Field label="To"><input type="date" className={inputCls()} value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></Field></>}

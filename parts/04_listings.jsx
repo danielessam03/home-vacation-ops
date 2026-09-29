@@ -21,6 +21,7 @@
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
+    const FORM_TOUR = { Basics: 'form-basics', Specs: 'form-specs', Media: 'form-media', Commercial: 'form-commercial', Marketing: 'form-marketing', 'Owner & source': 'form-owner' };   // guide-tour anchors
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
     const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
@@ -103,8 +104,8 @@
       return (
         <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : prefill ? 'New listing — from the photography list' : 'New listing'} onClose={onClose} footer={<>
           <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
-          <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
-          <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
+          <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn data-tour="form-save" onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
+          <div data-tour="form-completeness" className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
             <div className="mb-1.5 flex items-center justify-between text-sm">
               <span className="font-semibold text-slate-800">Completeness {comp.pct}%</span>
               {comp.missing.length > 0 && <Badge className="bg-rose-600 text-white">{comp.missing.length} missing</Badge>}
@@ -114,7 +115,7 @@
           {dup && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Possible duplicate: {dup.reference_code} has the same title.</div>}
           {isEdit && <p className="mb-3 text-xs text-slate-500">Location, type and sale/rent are part of the reference code and cannot change after creation.</p>}
           {FORM_GROUPS.map(([g, keys]) => (
-            <fieldset key={g} className="mb-5">
+            <fieldset key={g} data-tour={FORM_TOUR[g]} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -132,6 +133,7 @@
       const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false); const [basicImp, setBasicImp] = useState(false);
       const [view, setView] = useState('work');      // work | published | closed
       const setFilter = (k, v) => setFlt((p) => ({ ...p, [k]: v }));
+      useTourAction({ 'open-new-listing': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
         return data.listings.map((l) => ({ l, s: slaOf(l, cfg.sla_hours, now) })).filter(({ l, s: sl }) => {
@@ -159,12 +161,12 @@
           <PageHeader title="Listings" sub={`${rows.length} shown`}>
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
             <Btn kind="ghost" onClick={() => exportBasicInfo(rows.map((x) => x.l), cfg, toast)}>Export Basic Info (.xlsx)</Btn>
-            <Btn kind="soft" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>
+            <Btn kind="soft" data-tour="listing-io" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>
             <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>
-            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
+            <Btn data-tour="new-listing" onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
           </PageHeader>
-          <Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={bucketTabs(data.listings)} />
-          <div className="no-print mb-3 flex gap-2">
+          <div data-tour="listing-tabs"><Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={bucketTabs(data.listings)} /></div>
+          <div data-tour="listing-search" className="no-print mb-3 flex gap-2">
             <input className={inputCls()} placeholder="Search ref code, owner, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
             <Btn kind={activeFilters ? 'soft' : 'ghost'} onClick={() => setShowFilters(!showFilters)}>Filters{activeFilters ? ` (${activeFilters})` : ''}</Btn>
           </div>
@@ -183,7 +185,7 @@
           {!rows.length ? <Empty>{view === 'published' ? 'Nothing published yet. A listing moves here as soon as it is marked as published.' : view === 'closed' ? 'No rejected or archived listings.' : 'Nothing in progress. Create a listing with “New listing”.'}</Empty> : (
             <>
               {/* phone: cards */}
-              <div className="space-y-2 md:hidden">
+              <div data-tour="listing-list" className="space-y-2 md:hidden">
                 {rows.map(({ l, s }) => (
                   <Card key={l.id} className={`cursor-pointer border-l-4 p-3 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`} onClick={() => go('listing', l.id)}>
                     <div className="flex items-start justify-between gap-2">
@@ -202,7 +204,7 @@
                 ))}
               </div>
               {/* desktop: table */}
-              <Card className="scroll-x hidden md:block">
+              <Card data-tour="listing-list" className="scroll-x hidden md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', 'SLA', 'Complete', 'Price', 'Source', view === 'published' ? 'Uploaded by' : 'Entered by', view === 'published' ? 'Published' : 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
                   <tbody>
@@ -261,10 +263,10 @@
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div data-tour="ref-code" className="flex items-center gap-2">
                   <span className="font-mono text-2xl font-black tracking-wide text-slate-900">{l.reference_code}</span>
                   <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn>
-                  <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
+                  <Btn kind="soft" data-tour="ai-export" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
                   <Btn kind="ghost" className="!px-2.5 !py-1.5" onClick={() => exportBasicInfo([l], cfg, toast)}>Basic Info .xlsx</Btn>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
@@ -283,7 +285,7 @@
               {l.completeness_pct < 100 && <div className="mt-2 flex flex-wrap gap-1">{(l.missing_fields || []).map((m) => <Badge key={m} className="bg-rose-100 text-rose-800">{FIELD_LABEL[m] || m}</Badge>)}</div>}
             </div>
             {canEdit && (
-              <div className="no-print mt-4 flex flex-wrap gap-2">
+              <div data-tour="listing-actions" className="no-print mt-4 flex flex-wrap gap-2">
                 {!['archived'].includes(l.status) && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
                 {l.status === 'draft' && <Btn disabled={l.completeness_pct < 100} title={l.completeness_pct < 100 ? 'Complete all required fields first' : ''} onClick={() => setStatus('ready_to_publish')}>Ready to publish</Btn>}
                 {l.status === 'ready_to_publish' && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
@@ -320,7 +322,7 @@
               ))}
             </div>
             <div className="space-y-4">
-              <Card className="p-4">
+              <Card data-tour="listing-channels" className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-brand-800">Publishing channels</h3>
                 <div className="space-y-3">
                   {channels.map((c) => <ChannelRow key={c.id} c={c} canEdit={canEdit} />)}
@@ -330,7 +332,7 @@
                 </div>
                 {l.website_url && <a className="mt-3 inline-flex items-center gap-1 text-sm text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer"><Icon name="link" className="h-4 w-4" />View on website</a>}
               </Card>
-              <Card className="p-4">
+              <Card data-tour="sla-timeline" className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-brand-800">SLA timeline</h3>
                 <ol className="space-y-2 border-l-2 border-slate-200 pl-3 text-sm">
                   {timeline.map(([label, at]) => <li key={label}><div className={at ? 'text-slate-900' : 'text-slate-400'}>{label}</div><div className="text-xs text-slate-500">{at ? fmtDateTime(at) : 'pending'}</div></li>)}

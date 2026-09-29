@@ -19,7 +19,7 @@
       };
       return (
         <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>Save</Btn></>}>
-          <div className="grid grid-cols-2 gap-3">
+          <div data-tour="task-form" className="grid grid-cols-2 gap-3">
             <Field label="Title" className="col-span-2" bad={!f.title.trim()}><input className={inputCls(!f.title.trim())} value={f.title} onChange={(e) => set('title', e.target.value)} autoFocus /></Field>
             <Field label="Description" className="col-span-2"><textarea rows={3} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
             <Field label="Assignee"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
@@ -134,6 +134,7 @@
       const { me, data, now, save, toast } = useApp();
       const mgr = isMgr(me);
       const [who, setWho] = useState(mgr ? null : me.id); const [form, setForm] = useState(false); const [open, setOpen] = useState(openId || null); const [tpl, setTpl] = useState(false); const [col, setCol] = useState('todo');
+      useTourAction({ 'open-new-task': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const tasks = data.tasks.filter((t) => t.status !== 'cancelled' && (!who || t.assigned_to === who));
       const recentDone = (t) => t.status !== 'done' || now - new Date(t.approved_at || t.updated_at).getTime() < 14 * 864e5;
       const byCol = (k) => tasks.filter((t) => t.status === k && recentDone(t)).sort((a, b) => (new Date(a.due_at || '2999') - new Date(b.due_at || '2999')));
@@ -149,16 +150,16 @@
         <div>
           <PageHeader title="Tasks" sub={`${tasks.filter((t) => isOverdue(t, now)).length} overdue · ${tasks.filter((t) => t.status === 'review').length} waiting approval`}>
             <div className="w-44"><Select value={who} onChange={setWho} placeholder="Everyone" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.id === me.id ? 'My tasks' : p.full_name || p.email])} /></div>
-            {mgr && <Btn kind="ghost" onClick={() => setTpl(true)}>↻ Recurring</Btn>}
+            {mgr && <Btn kind="ghost" data-tour="recurring" onClick={() => setTpl(true)}>↻ Recurring</Btn>}
             <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New task</Btn>
           </PageHeader>
           {/* phone: one column at a time */}
-          <div className="md:hidden">
+          <div data-tour="task-board" className="md:hidden">
             <Tabs value={col} onChange={setCol} tabs={TASK_COLS.map(([k, l]) => [k, `${l} (${byCol(k).length})`])} />
             <div className="space-y-2">{byCol(col).length ? byCol(col).map((t) => <TaskCard key={t.id} t={t} onOpen={(x) => setOpen(x.id)} />) : <Empty>Nothing here.</Empty>}</div>
           </div>
           {/* desktop: kanban with drag and drop */}
-          <div className="hidden grid-cols-4 gap-3 md:grid">
+          <div data-tour="task-board" className="hidden grid-cols-4 gap-3 md:grid">
             {TASK_COLS.map(([k, label]) => (
               <div key={k} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, k)} className="min-h-[60vh] rounded-xl bg-slate-100 p-2">
                 <div className="mb-2 flex items-center justify-between px-1 text-sm font-semibold text-slate-700"><span>{label}</span><span className="num text-slate-400">{byCol(k).length}</span></div>

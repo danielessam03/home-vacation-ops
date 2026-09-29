@@ -13,6 +13,9 @@
   <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- shared guide tour (Tour button) — optional: the app works the same if it fails to load.
+       async, NOT defer: a deferred script that cannot connect holds back DOMContentLoaded, and Babel starts the app only then (tested: +22s) -->
+  <script id="hv-tour-js" src="https://hv-shared.pages.dev/hv-tour.js" async onerror="var s=document.createElement('script');s.id='hv-tour-js2';s.async=true;s.src='https://hvshared-home-vacation.pages.dev/hv-tour.js';document.head.appendChild(s)"></script>
   <script>
     tailwind.config = { theme: { extend: { colors: { brand: { 50:'#eef7f8',100:'#d5ebee',200:'#a9d5dc',500:'#1b7f93',600:'#14677a',700:'#0f5264',800:'#0f3d4c',900:'#0b2c38' } } } } };
   </script>
@@ -44,7 +47,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.15.0';
+    const APP_VERSION = 'v1.16.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -288,7 +291,7 @@
       if (s.state === 'none') return null;
       const st = SLA_STYLE[s.state];
       const text = s.verified ? `Live in ${fmtHours(s.hours)}` : s.onHold ? `Paused · ${fmtHours(s.hours)}` : s.remaining >= 0 ? `${fmtHours(s.remaining)} left` : `${fmtHours(-s.remaining)} over`;
-      return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${st.chip}`}><span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{text}</span>;
+      return <span data-tour="sla-chip" className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${st.chip}`}><span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{text}</span>;
     };
     const StatusBadge = ({ status }) => { const s = LISTING_STATUS[status] || [status, '']; return <Badge className={s[1]}>{s[0]}</Badge>; };
     // Single-series bar chart. Values are labelled directly so no axis is needed.
@@ -454,6 +457,7 @@
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
+    const FORM_TOUR = { Basics: 'form-basics', Specs: 'form-specs', Media: 'form-media', Commercial: 'form-commercial', Marketing: 'form-marketing', 'Owner & source': 'form-owner' };   // guide-tour anchors
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
     const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
@@ -536,8 +540,8 @@
       return (
         <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : prefill ? 'New listing — from the photography list' : 'New listing'} onClose={onClose} footer={<>
           <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
-          <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
-          <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
+          <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn data-tour="form-save" onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
+          <div data-tour="form-completeness" className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
             <div className="mb-1.5 flex items-center justify-between text-sm">
               <span className="font-semibold text-slate-800">Completeness {comp.pct}%</span>
               {comp.missing.length > 0 && <Badge className="bg-rose-600 text-white">{comp.missing.length} missing</Badge>}
@@ -547,7 +551,7 @@
           {dup && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Possible duplicate: {dup.reference_code} has the same title.</div>}
           {isEdit && <p className="mb-3 text-xs text-slate-500">Location, type and sale/rent are part of the reference code and cannot change after creation.</p>}
           {FORM_GROUPS.map(([g, keys]) => (
-            <fieldset key={g} className="mb-5">
+            <fieldset key={g} data-tour={FORM_TOUR[g]} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -565,6 +569,7 @@
       const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false); const [basicImp, setBasicImp] = useState(false);
       const [view, setView] = useState('work');      // work | published | closed
       const setFilter = (k, v) => setFlt((p) => ({ ...p, [k]: v }));
+      useTourAction({ 'open-new-listing': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
         return data.listings.map((l) => ({ l, s: slaOf(l, cfg.sla_hours, now) })).filter(({ l, s: sl }) => {
@@ -592,12 +597,12 @@
           <PageHeader title="Listings" sub={`${rows.length} shown`}>
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
             <Btn kind="ghost" onClick={() => exportBasicInfo(rows.map((x) => x.l), cfg, toast)}>Export Basic Info (.xlsx)</Btn>
-            <Btn kind="soft" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>
+            <Btn kind="soft" data-tour="listing-io" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>
             <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>
-            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
+            <Btn data-tour="new-listing" onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
           </PageHeader>
-          <Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={bucketTabs(data.listings)} />
-          <div className="no-print mb-3 flex gap-2">
+          <div data-tour="listing-tabs"><Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={bucketTabs(data.listings)} /></div>
+          <div data-tour="listing-search" className="no-print mb-3 flex gap-2">
             <input className={inputCls()} placeholder="Search ref code, owner, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
             <Btn kind={activeFilters ? 'soft' : 'ghost'} onClick={() => setShowFilters(!showFilters)}>Filters{activeFilters ? ` (${activeFilters})` : ''}</Btn>
           </div>
@@ -616,7 +621,7 @@
           {!rows.length ? <Empty>{view === 'published' ? 'Nothing published yet. A listing moves here as soon as it is marked as published.' : view === 'closed' ? 'No rejected or archived listings.' : 'Nothing in progress. Create a listing with “New listing”.'}</Empty> : (
             <>
               {/* phone: cards */}
-              <div className="space-y-2 md:hidden">
+              <div data-tour="listing-list" className="space-y-2 md:hidden">
                 {rows.map(({ l, s }) => (
                   <Card key={l.id} className={`cursor-pointer border-l-4 p-3 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`} onClick={() => go('listing', l.id)}>
                     <div className="flex items-start justify-between gap-2">
@@ -635,7 +640,7 @@
                 ))}
               </div>
               {/* desktop: table */}
-              <Card className="scroll-x hidden md:block">
+              <Card data-tour="listing-list" className="scroll-x hidden md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', 'SLA', 'Complete', 'Price', 'Source', view === 'published' ? 'Uploaded by' : 'Entered by', view === 'published' ? 'Published' : 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
                   <tbody>
@@ -694,10 +699,10 @@
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div data-tour="ref-code" className="flex items-center gap-2">
                   <span className="font-mono text-2xl font-black tracking-wide text-slate-900">{l.reference_code}</span>
                   <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn>
-                  <Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
+                  <Btn kind="soft" data-tour="ai-export" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
                   <Btn kind="ghost" className="!px-2.5 !py-1.5" onClick={() => exportBasicInfo([l], cfg, toast)}>Basic Info .xlsx</Btn>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
@@ -716,7 +721,7 @@
               {l.completeness_pct < 100 && <div className="mt-2 flex flex-wrap gap-1">{(l.missing_fields || []).map((m) => <Badge key={m} className="bg-rose-100 text-rose-800">{FIELD_LABEL[m] || m}</Badge>)}</div>}
             </div>
             {canEdit && (
-              <div className="no-print mt-4 flex flex-wrap gap-2">
+              <div data-tour="listing-actions" className="no-print mt-4 flex flex-wrap gap-2">
                 {!['archived'].includes(l.status) && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
                 {l.status === 'draft' && <Btn disabled={l.completeness_pct < 100} title={l.completeness_pct < 100 ? 'Complete all required fields first' : ''} onClick={() => setStatus('ready_to_publish')}>Ready to publish</Btn>}
                 {l.status === 'ready_to_publish' && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
@@ -753,7 +758,7 @@
               ))}
             </div>
             <div className="space-y-4">
-              <Card className="p-4">
+              <Card data-tour="listing-channels" className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-brand-800">Publishing channels</h3>
                 <div className="space-y-3">
                   {channels.map((c) => <ChannelRow key={c.id} c={c} canEdit={canEdit} />)}
@@ -763,7 +768,7 @@
                 </div>
                 {l.website_url && <a className="mt-3 inline-flex items-center gap-1 text-sm text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer"><Icon name="link" className="h-4 w-4" />View on website</a>}
               </Card>
-              <Card className="p-4">
+              <Card data-tour="sla-timeline" className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-brand-800">SLA timeline</h3>
                 <ol className="space-y-2 border-l-2 border-slate-200 pl-3 text-sm">
                   {timeline.map(([label, at]) => <li key={label}><div className={at ? 'text-slate-900' : 'text-slate-400'}>{label}</div><div className="text-xs text-slate-500">{at ? fmtDateTime(at) : 'pending'}</div></li>)}
@@ -1010,7 +1015,7 @@
         <Modal wide title={isEdit ? `Edit ${project.reference_code}` : 'New project'} onClose={onClose} footer={<>
           <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
           <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate Project ID'}</Btn></>}>
-          <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
+          <div data-tour="pform-top" className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
             <div className="mb-1.5 flex items-center justify-between text-sm"><span className="font-semibold text-slate-800">Completeness {comp.pct}%</span>{comp.missing.length > 0 && <Badge className="bg-rose-600 text-white">{comp.missing.length} missing</Badge>}</div>
             <Meter value={comp.pct} />
           </div>
@@ -1032,6 +1037,7 @@
     const ProjectsPage = () => {
       const { data, cfg, now, go, nameOf } = useApp();
       const [q, setQ] = useState(''); const [status, setStatus] = useState(null); const [form, setForm] = useState(false); const [view, setView] = useState('work');
+      useTourAction({ 'open-new-project': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
         return data.projects.map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter(({ p }) => {
@@ -1047,7 +1053,7 @@
         <div>
           <PageHeader title="Projects" sub={`${rows.length} shown · Project ID = P-location-serial-S`}>
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
-            <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New project</Btn>
+            <Btn data-tour="new-project" onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New project</Btn>
           </PageHeader>
           <Tabs value={view} onChange={(v) => { setView(v); setStatus(null); }} tabs={bucketTabs(data.projects)} />
           <div className="no-print mb-3 flex gap-2">
@@ -1100,7 +1106,7 @@
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn></div>
+                <div data-tour="project-code" className="flex items-center gap-2"><span className="font-mono text-2xl font-black tracking-wide text-slate-900">{p.reference_code}</span><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={copy}><Icon name={copied ? 'check' : 'copy'} className="h-4 w-4" />{copied ? 'Copied' : 'Copy'}</Btn><Btn kind="soft" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn></div>
                 <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress <b>Project ID</b> field. If it is left empty the website invents a PRJ-… number and the project can never be verified.</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{p.name}</h2>
                 <div className="text-sm text-slate-700">{p.developer || 'Developer —'} · {p.location}</div>
@@ -1209,7 +1215,7 @@
       return (
         <Modal wide title={request ? `Edit ${photoNo(request)}` : 'Property that needs photography'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Btn></>}>
           <p className="mb-3 text-sm text-slate-500">Use this when a property has to be photographed <b>before</b> it can be entered as a listing. It gets its real code (AH-A-1049-S) later, when the listing is created from here.</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div data-tour="photo-form" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Field label="Owner name" bad={bad.owner_name} className="col-span-2"><input className={inputCls(bad.owner_name)} value={f.owner_name} onChange={(e) => set('owner_name', e.target.value)} autoFocus /></Field>
             <Field label="Owner phone"><input className={inputCls()} value={f.owner_phone || ''} onChange={(e) => set('owner_phone', e.target.value)} /></Field>
             <Field label="Location" bad={bad.location}><Select bad={bad.location} value={f.location} onChange={(v) => set('location', v)} options={Object.keys(cfg.location_codes || {}).sort()} /></Field>
@@ -1273,7 +1279,7 @@
           </div>
           {r.revision_note && r.status !== 'ready' && <div className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-900">Manager asked: {r.revision_note}</div>}
           {r.status === 'cancelled' && <div className="mt-2 text-xs text-slate-500">Reason: {r.cancel_reason}</div>}
-          <div className="no-print mt-3 flex flex-wrap gap-2">
+          <div data-tour="photo-actions" className="no-print mt-3 flex flex-wrap gap-2">
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onEdit(r)}>{r.status === 'requested' ? 'Assign / schedule' : 'Edit'}</Btn>}
             {can && ['requested', 'scheduled'].includes(r.status) && <Btn className="!py-1.5" onClick={() => onShot(r)}>Photos taken</Btn>}
             {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) toast('Photos approved'); }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
@@ -1289,6 +1295,7 @@
     const PhotoRequestsPage = () => {
       const { data, now, save, go, toast, reloadTable } = useApp();
       const [q, setQ] = useState(''); const [form, setForm] = useState(null); const [shot, setShot] = useState(null); const [reason, setReason] = useState(null); const [convert, setConvert] = useState(null); const [showDone, setShowDone] = useState(false);
+      useTourAction({ 'open-photo-request': () => { if (form) return false; setForm({}); }, close: () => setForm(null) });
       const s = q.trim().toLowerCase();
       const rows = data.photo_requests.filter((r) => !s || `${photoNo(r)} ${r.owner_name} ${r.owner_phone || ''} ${r.location} ${r.address_notes || ''}`.toLowerCase().includes(s));
       const openCount = rows.filter((r) => !['converted', 'cancelled'].includes(r.status)).length;
@@ -1296,7 +1303,7 @@
         <div>
           <PageHeader title="Needs photography" sub={`${openCount} open · properties waiting for a shoot before they become listings`}>
             <Btn kind="ghost" onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide finished' : 'Show finished'}</Btn>
-            <Btn onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add property</Btn>
+            <Btn data-tour="add-photo" onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add property</Btn>
           </PageHeader>
           <input className={`${inputCls()} no-print mb-4`} placeholder="Search owner, phone, location…" value={q} onChange={(e) => setQ(e.target.value)} />
           {!rows.length && <Empty>Nothing on the photography list. Add a property that has to be photographed before it can be listed.</Empty>}
@@ -1693,7 +1700,7 @@ Rules:
       };
       return (
         <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>Save</Btn></>}>
-          <div className="grid grid-cols-2 gap-3">
+          <div data-tour="task-form" className="grid grid-cols-2 gap-3">
             <Field label="Title" className="col-span-2" bad={!f.title.trim()}><input className={inputCls(!f.title.trim())} value={f.title} onChange={(e) => set('title', e.target.value)} autoFocus /></Field>
             <Field label="Description" className="col-span-2"><textarea rows={3} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
             <Field label="Assignee"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
@@ -1808,6 +1815,7 @@ Rules:
       const { me, data, now, save, toast } = useApp();
       const mgr = isMgr(me);
       const [who, setWho] = useState(mgr ? null : me.id); const [form, setForm] = useState(false); const [open, setOpen] = useState(openId || null); const [tpl, setTpl] = useState(false); const [col, setCol] = useState('todo');
+      useTourAction({ 'open-new-task': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const tasks = data.tasks.filter((t) => t.status !== 'cancelled' && (!who || t.assigned_to === who));
       const recentDone = (t) => t.status !== 'done' || now - new Date(t.approved_at || t.updated_at).getTime() < 14 * 864e5;
       const byCol = (k) => tasks.filter((t) => t.status === k && recentDone(t)).sort((a, b) => (new Date(a.due_at || '2999') - new Date(b.due_at || '2999')));
@@ -1823,16 +1831,16 @@ Rules:
         <div>
           <PageHeader title="Tasks" sub={`${tasks.filter((t) => isOverdue(t, now)).length} overdue · ${tasks.filter((t) => t.status === 'review').length} waiting approval`}>
             <div className="w-44"><Select value={who} onChange={setWho} placeholder="Everyone" options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.id === me.id ? 'My tasks' : p.full_name || p.email])} /></div>
-            {mgr && <Btn kind="ghost" onClick={() => setTpl(true)}>↻ Recurring</Btn>}
+            {mgr && <Btn kind="ghost" data-tour="recurring" onClick={() => setTpl(true)}>↻ Recurring</Btn>}
             <Btn onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New task</Btn>
           </PageHeader>
           {/* phone: one column at a time */}
-          <div className="md:hidden">
+          <div data-tour="task-board" className="md:hidden">
             <Tabs value={col} onChange={setCol} tabs={TASK_COLS.map(([k, l]) => [k, `${l} (${byCol(k).length})`])} />
             <div className="space-y-2">{byCol(col).length ? byCol(col).map((t) => <TaskCard key={t.id} t={t} onOpen={(x) => setOpen(x.id)} />) : <Empty>Nothing here.</Empty>}</div>
           </div>
           {/* desktop: kanban with drag and drop */}
-          <div className="hidden grid-cols-4 gap-3 md:grid">
+          <div data-tour="task-board" className="hidden grid-cols-4 gap-3 md:grid">
             {TASK_COLS.map(([k, label]) => (
               <div key={k} onDragOver={(e) => e.preventDefault()} onDrop={(e) => drop(e, k)} className="min-h-[60vh] rounded-xl bg-slate-100 p-2">
                 <div className="mb-2 flex items-center justify-between px-1 text-sm font-semibold text-slate-700"><span>{label}</span><span className="num text-slate-400">{byCol(k).length}</span></div>
@@ -1926,7 +1934,7 @@ Rules:
       return (
         <div>
           <PageHeader title="Agencies" sub="Contract scorecards — the renewal document"><MonthPicker value={month} onChange={setMonth} /><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print</Btn></PageHeader>
-          <Tabs value={agency.id} onChange={setAid} tabs={agencies.map((a) => [a.id, a.display_name])} />
+          <div data-tour="agency-tabs"><Tabs value={agency.id} onChange={setAid} tabs={agencies.map((a) => [a.id, a.display_name])} /></div>
           <div className="space-y-4">
             <Card className="p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1937,14 +1945,14 @@ Rules:
               {me.role === 'admin' && <p className="no-print mt-1 text-xs text-slate-400">Edit the contract in Settings → Agencies.</p>}
             </Card>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div data-tour="agency-tiles" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Tile label={`Delivery rate${delta('delivery_rate') != null ? ` (${delta('delivery_rate') >= 0 ? '+' : ''}${delta('delivery_rate')} vs prev)` : ''}`} value={sc.delivery_rate == null ? null : `${sc.delivery_rate}%`} />
               <Tile label="On-time delivery" value={sc.on_time_pct == null ? null : `${sc.on_time_pct}%`} />
               <Tile label="Revision rate" value={sc.revision_rate == null ? null : `${sc.revision_rate}%`} />
               <Tile label={`Cost per lead (${sc.cpl_basis})`} value={sc.cpl == null ? null : money(sc.cpl, sc.currency)} />
             </div>
 
-            <Card className="p-4">
+            <Card data-tour="agency-deliverables" className="p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-brand-800">Deliverables — {monthLabel(month)} · {sc.delivered}/{sc.planned} delivered</h3>
                 {canWrite && <div className="no-print flex gap-2">{!items.length && <Btn kind="ghost" className="!py-1.5" onClick={copyLast}>Copy plan from last month</Btn>}<Btn className="!py-1.5" onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add</Btn></div>}
@@ -2033,7 +2041,7 @@ Rules:
         const rs = rows.filter(keep).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
         if (!rs.length) return null;
         return (
-          <Card className="scroll-x p-4">
+          <Card data-tour="kpi-board" className="scroll-x p-4">
             <h3 className="mb-3 text-sm font-semibold text-brand-800">{title}</h3>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500"><tr><th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Name</th>{cols.map((c) => <th key={c.key} className="px-2 py-1.5 text-right font-medium">{c.label}</th>)}</tr></thead>
@@ -2051,12 +2059,12 @@ Rules:
         <div>
           <PageHeader title="KPIs" sub="Value / target. Green = target met."><MonthPicker value={month} onChange={setMonth} /></PageHeader>
           <div className="space-y-4">
-            {mgr && <p className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
+            {mgr && <p data-tour="kpi-note" className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
             {mgr && board('Stage 1 — data & photos entered', (r) => r.k.listings_entered > 0 || r.k.projects_entered > 0, 'listings_entered', defs.filter((d) => d.part === 'entry'))}
             {mgr && board('Stage 2 — uploaded online', (r) => r.k.listings_uploaded > 0 || r.k.waiting_upload > 0 || r.k.projects_uploaded > 0, 'listings_uploaded', defs.filter((d) => d.part === 'upload'))}
             {mgr && board('Marketing', (r) => r.p.role === 'marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
             {rows.map(({ p, k }) => (
-              <Card key={p.id} className="p-4">
+              <Card key={p.id} data-tour="kpi-card" className="p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div><h3 className="font-semibold text-slate-900">{k.name}</h3><p className="text-xs text-slate-500">{ROLE_LABEL[p.role]} · {monthLabel(month)}</p></div>
                   {mgr && <Btn kind="ghost" className="no-print !py-1.5" onClick={() => setTarget(p)}>Set targets</Btn>}
@@ -2104,7 +2112,7 @@ Rules:
       const myKpi = useMemo(() => userKpis(me, monthRange(month), data, sla, now), [data, now]);
       const taskLine = (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className={`whitespace-nowrap text-xs ${isOverdue(t, now) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{t.due_at ? fmtDateTime(t.due_at) : ''}</span></button>;
       const kpiTiles = (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div data-tour="dash-top" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {(isMgr(me) ? [] : kpiDefsForUser(cfg, me.role, myKpi)).slice(0, 8).map((d) => <Tile key={d.key} label={`${d.label}${unitOf(d) ? ` (${unitOf(d)})` : ''}`} value={myKpi[d.key]} target={targetOf(data, me.id, month, d.key)} better={d.better} />)}
         </div>
       );
@@ -2123,7 +2131,7 @@ Rules:
             <PageHeader title={`Hello, ${(me.full_name || '').split(' ')[0] || 'there'}`} sub={`${monthLabel(month)} · month to date`} />
             <div className="space-y-4">
               {kpiTiles}
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div data-tour="dash-lists" className="grid gap-4 lg:grid-cols-2">
                 {myShoots.length > 0 && <Section title="Needs photography — mine" count={myShoots.length} tone="red" action={<button className="text-xs text-brand-700" onClick={() => go('photo')}>Open</button>}>{myShoots.slice(0, 6).map((r) => <button key={r.id} onClick={() => go('photo')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="min-w-0 truncate">{r.owner_name} · {r.location}</span><Badge className={PHOTO_STATUS[r.status][1]}>{r.status === 'scheduled' ? fmtDateTime(r.scheduled_at) : PHOTO_STATUS[r.status][0]}</Badge></button>)}</Section>}
                 {me.role === 'data_entry' && projToUpload.length > 0 && <Section title="Projects ready — waiting for me to upload" count={projToUpload.length} tone="red">{projToUpload.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
                 {me.role === 'data_entry' && myProjects.length > 0 && <Section title="My projects in progress" count={myProjects.length}>{myProjects.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {p.completeness_pct}% complete</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section>}
@@ -2157,7 +2165,7 @@ Rules:
           <PageHeader title="Operations dashboard" sub="Red items first" />
           <div className="space-y-4">
             {(() => { const mineUp = open.filter((l) => l.status === 'ready_to_publish' && l.assigned_to === me.id); const mineProj = data.projects.filter((p) => p.status === 'ready_to_publish' && p.assigned_to === me.id); return (mineUp.length || mineProj.length) ? <Section title="Ready — waiting for me to upload" count={mineUp.length + mineProj.length} tone="red">{[...withSla(mineUp).map(({ l }) => <ListingLine key={l.id} l={l} note={`${l.owner_name || l.title || l.location} · entered by ${nameOf(l.entered_by)}`} />), ...mineProj.map((p) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · entered by {nameOf(p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)]}</Section> : null; })()}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div data-tour="dash-top" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <Tile label="SLA breached" value={breached.length} tone={breached.length ? 'red' : null} />
               <Tile label="Claimed, not found" value={cnf.length} tone={cnf.length ? 'red' : null} />
               <Tile label={`Incomplete > ${(sla && sla.incomplete_alert) || 24}h`} value={stale.length} tone={stale.length ? 'red' : null} />
@@ -2166,7 +2174,7 @@ Rules:
             </div>
             {(() => { const bad = data.projects.filter((p) => !['archived', 'rejected', 'verified_live', 'on_hold'].includes(p.status)).map((p) => ({ p, s: slaOf(p, cfg.project_sla_hours, now) })).filter((x) => x.s.state === 'red' || x.s.claimedNotFound); return bad.length ? <Section title="Projects — SLA breached or claimed but not found" count={bad.length} tone="red">{bad.map(({ p, s }) => <button key={p.id} onClick={() => go('project', p.id)} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left first:border-t-0"><span className="min-w-0"><span className="block font-mono text-sm font-semibold">{p.reference_code}</span><span className="block truncate text-xs text-slate-500">{p.name} · {s.claimedNotFound ? 'claimed, not found' : LISTING_STATUS[p.status][0]} · {nameOf(p.assigned_to || p.entered_by)}</span></span><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></button>)}</Section> : null; })()}
             {(() => { const wait = data.photo_requests.filter((r) => r.status === 'shot'); const unsched = data.photo_requests.filter((r) => r.status === 'requested' || shootOverdue(r, now)); return (wait.length || unsched.length) ? <Section title="Photography" count={wait.length + unsched.length} tone="red" action={<button className="text-xs text-brand-700" onClick={() => go('photo')}>Open</button>}>{[...wait.map((r) => [r, 'photos waiting for your approval']), ...unsched.map((r) => [r, r.status === 'requested' ? `not scheduled · waiting ${waitingDays(r, now)}d` : 'shoot overdue'])].slice(0, 8).map(([r, note]) => <button key={r.id + note} onClick={() => go('photo')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="min-w-0 truncate">{photoNo(r)} · {r.owner_name} · {r.location}</span><span className="whitespace-nowrap text-xs text-rose-700">{note}</span></button>)}</Section> : null; })()}
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div data-tour="dash-lists" className="grid gap-4 lg:grid-cols-2">
               <Section title="Breached SLAs (> 72h, not live)" count={breached.length} tone="red">{limitList(breached, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.assigned_to || l.entered_by)} · ${LISTING_STATUS[l.status][0]}`} />, 'No breaches.')}</Section>
               <Section title="Claimed published — NOT found on website" count={cnf.length} tone="red">{limitList(cnf, ({ l }) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} claimed ${fmtDateTime(l.date_published_claimed)}`} />, 'Every claim has been verified.')}</Section>
               <Section title="Incomplete for more than 24h" count={stale.length} tone="red">{limitList(stale, (l) => <ListingLine key={l.id} l={l} note={`${nameOf(l.entered_by)} · ${l.completeness_pct}% · missing ${(l.missing_fields || []).length}`} />, 'None.')}</Section>
@@ -2269,10 +2277,10 @@ Rules:
       return (
         <div>
           <PageHeader title="Reports" sub={snap ? `Frozen snapshot · ${snap.title} · saved ${fmtDateTime(snap.created_at)}` : `${report.from} → ${report.to}`}>
-            <Btn kind="ghost" onClick={exportCsv}>CSV</Btn><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print / PDF</Btn>
+            <Btn kind="ghost" data-tour="report-export" onClick={exportCsv}>CSV</Btn><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print / PDF</Btn>
             {!snap && isMgr(me) && <Btn onClick={freeze}>Freeze snapshot</Btn>}{snap && <Btn onClick={() => setSnap(null)}>Back to live</Btn>}
           </PageHeader>
-          {!snap && <Tabs value={preset} onChange={setPreset} tabs={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom range']]} />}
+          {!snap && <div data-tour="report-presets"><Tabs value={preset} onChange={setPreset} tabs={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom range']]} /></div>}
           <div className="no-print mb-4 flex flex-wrap items-end gap-3">
             {!snap && preset === 'monthly' && <MonthPicker value={month} onChange={setMonth} />}
             {!snap && preset === 'custom' && <><Field label="From"><input type="date" className={inputCls()} value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /></Field><Field label="To"><input type="date" className={inputCls()} value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></Field></>}
@@ -2283,6 +2291,217 @@ Rules:
         </div>
       );
     };
+
+    // =========================================================================================
+    // GUIDE TOUR — the content for the shared tour engine (https://hv-shared.pages.dev/hv-tour.js).
+    // The engine draws the "Tour" button, the spotlight and the guide; it is started once in App (08_settings_app.jsx).
+    // Anchors: data-tour="<target>" on the elements below, data-tour-nav="<page>" on every menu item
+    // (a new menu page with no written step still gets an automatic step).
+    // =========================================================================================
+
+    // Lets a page open / close one of its own forms (or switch a tab) while the tour explains it.
+    // Only what the tour opened is closed again, and the tour never saves anything (its overlay blocks every click).
+    const useTourAction = (handlers) => {
+      const h = useRef(handlers); h.current = handlers;
+      useEffect(() => {
+        let opened = false;
+        const on = (e) => {
+          const a = e.detail && e.detail.action; if (!a) return;
+          if (a === 'close') { if (opened && h.current.close) h.current.close(); opened = false; return; }
+          if (!h.current[a] || h.current[a]() === false) return;
+          opened = true;
+          setTimeout(() => { try { const el = document.activeElement; if (el && el !== document.body) el.blur(); } catch (x) {} }, 120);   // no phone keyboard over the tour card
+        };
+        window.addEventListener('hv-tour', on);
+        return () => window.removeEventListener('hv-tour', on);
+      }, []);
+    };
+
+    /* HV-TOUR-STEPS-START — keep in sync with the screens: every change to a screen updates its step here */
+    const HV_TOUR_CHAPTERS = [
+      ['start', 'Getting started', 'البداية'],
+      ['listings', 'Listings', 'الوحدات (Listings)'],
+      ['entry', 'New listing & reference codes', 'إدخال وحدة جديدة وكود المرجع'],
+      ['lifecycle', 'Listing lifecycle & the 72h SLA', 'مراحل الوحدة ومهلة الـ 72 ساعة'],
+      ['projects', 'Projects', 'المشروعات (Projects)'],
+      ['photo', 'Needs photography', 'طلبات التصوير'],
+      ['tasks', 'Tasks & alerts', 'المهام والتنبيهات'],
+      ['perf', 'Agencies, KPIs & reports', 'الوكالات والمؤشرات والتقارير'],
+      ['settings', 'Settings (admin)', 'الإعدادات (للأدمن)'],
+      ['roles', 'Roles, permissions & systems', 'الأدوار والصلاحيات والأنظمة'],
+    ];
+    const HV_TOUR_STEPS = [
+      // ---------------------------------------------------------------- Getting started
+      { c: 'start', page: 'dashboard', target: 'menu',
+        en: ['Welcome to HV Ops', 'HV Ops follows every property from the moment its information reaches us until it is live on home-vacation.com — plus projects, photo shoots, tasks and agency work. The menu shows only the pages your role can use (on a phone: the bottom bar and “More”).'],
+        ar: ['أهلاً بك في HV Ops', 'يتابع HV Ops كل عقار من لحظة وصول بياناته إلينا حتى يظهر على موقع home-vacation.com، بالإضافة إلى المشروعات وجلسات التصوير والمهام وعمل الوكالات. القائمة تعرض فقط الصفحات المسموحة لدورك (على الموبايل: الشريط السفلي وزر «More»).'] },
+      { c: 'start', page: 'dashboard', target: 'dash-top',
+        en: ['Home — your numbers first', 'Staff see their own month-to-date KPIs against target (green ✓ = met). Managers see red counters instead: SLA breached, claimed but not found, incomplete, waiting for approval and overdue tasks — tap a counter to jump to it.'],
+        ar: ['الرئيسية — أرقامك أولاً', 'الموظف يرى مؤشرات أدائه منذ بداية الشهر مقارنة بالهدف (✓ أخضر = تحقق الهدف). المدير يرى بدلاً منها عدادات حمراء: تجاوز المهلة، منشور ولم يُعثر عليه، غير مكتمل، بانتظار الموافقة، ومهام متأخرة — اضغط العداد للانتقال إليه.'] },
+      { c: 'start', page: 'dashboard', target: 'dash-lists',
+        en: ['Red items first', 'Below are the lists that need you today: your SLA clocks, incomplete listings, items waiting for you to upload, your shoots and tasks due today. Managers get breaches, claims not found on the website, at-risk listings, approvals and a Team KPI table. Click any line to open it.'],
+        ar: ['الأحمر أولاً', 'تحتها القوائم التي تحتاجك اليوم: عدّادات المهلة الخاصة بك، الوحدات غير المكتملة، ما ينتظر أن ترفعه، جلسات التصوير، والمهام المستحقة اليوم. المدير يرى تجاوزات المهلة، وما قيل إنه نُشر ولم يُعثر عليه في الموقع، والوحدات المعرّضة للتأخير، والموافقات، وجدول مؤشرات الفريق. اضغط أي سطر لفتحه.'] },
+
+      // ---------------------------------------------------------------- Listings
+      { c: 'listings', page: 'listings', target: 'listing-tabs',
+        en: ['Three tabs, one pipeline', '“In progress” holds drafts, ready-to-publish and on-hold listings — only what still needs work. A listing moves to “Published” the moment someone marks it published, and to “Rejected / archived” when a manager closes it.'],
+        ar: ['ثلاث تبويبات لمسار واحد', 'تبويب «In progress» فيه المسودات والجاهز للنشر والمعلّق — أي ما زال يحتاج عملاً فقط. تنتقل الوحدة إلى «Published» لحظة أن يعلّمها أحد كمنشورة، وإلى «Rejected / archived» عندما يغلقها المدير.'] },
+      { c: 'listings', page: 'listings', target: 'listing-search',
+        en: ['Search and filters', 'Search by reference code, owner name or phone, title or source. “Filters” narrows the list by status, SLA state, location, source, who entered it, completeness and the date received.'],
+        ar: ['البحث والفلاتر', 'ابحث بكود المرجع أو اسم المالك أو رقمه أو العنوان أو المصدر. زر «Filters» يصفّي حسب الحالة، حالة المهلة، المنطقة، المصدر، من أدخلها، نسبة الاكتمال، وتاريخ الاستلام.'] },
+      { c: 'listings', page: 'listings', target: 'listing-list',
+        en: ['Reading the list', 'The coloured left edge is the SLA state. Each row shows the code, owner, status, SLA chip, completeness % and who entered it; on the Published tab you see who uploaded it and how fast it went live. Click a row to open the listing.'],
+        ar: ['قراءة القائمة', 'اللون على الحافة اليسرى هو حالة المهلة. كل صف يعرض الكود والمالك والحالة وشارة المهلة ونسبة الاكتمال ومن أدخلها؛ وفي تبويب Published ترى من رفعها وكم استغرقت حتى ظهرت على الموقع. اضغط الصف لفتح الوحدة.'] },
+      { c: 'listings', page: 'listings', target: 'sla-chip',
+        en: ['The 72-hour SLA chip', 'The clock starts at “Date received” and stops only when the verifier finds the listing live on home-vacation.com. Green = under 48h, amber = at risk (48–72h), red = breached (over 72h). Time on hold is not counted — the chip then says “Paused”.'],
+        ar: ['شارة مهلة الـ 72 ساعة', 'يبدأ العدّاد من «Date received» ولا يتوقف إلا عندما يجد المُتحقِّق الآلي الوحدة منشورة فعلاً على home-vacation.com. الأخضر = أقل من 48 ساعة، الأصفر = معرّضة للتأخير (48–72)، الأحمر = تجاوزت 72 ساعة. وقت التعليق (On hold) لا يُحتسب وتظهر الشارة «Paused».'] },
+      { c: 'listings', page: 'listings', target: 'listing-io',
+        en: ['Import and export', '“Import Basic Info” reads the office “Basic Required Info” Excel sheets — single files or whole folders; the owner and an existing File Ref come from the folder name. “Import CSV” is for the old backlog, with a dry-run preview. Nothing is saved until you confirm. “Export CSV” and “Export Basic Info” download what is on screen.'],
+        ar: ['الاستيراد والتصدير', 'زر «Import Basic Info» يقرأ ملفات Excel الخاصة بالمكتب «Basic Required Info» — ملف واحد أو مجلد كامل؛ ويُؤخذ اسم المالك والـ File Ref الموجود من اسم المجلد. زر «Import CSV» للأرشيف القديم مع معاينة تجريبية. لا يُحفظ شيء قبل أن تؤكد. و«Export CSV» و«Export Basic Info» ينزّلان ما يظهر على الشاشة.'] },
+
+      // ---------------------------------------------------------------- New listing & reference codes
+      { c: 'entry', page: 'listings', target: 'new-listing',
+        en: ['Enter it the day it arrives', 'Press “New listing” as soon as the information reaches you — the 72h clock runs from the date received, not from when you type it. You can save a draft with only the basics and complete it later.'],
+        ar: ['أدخلها في نفس يوم وصولها', 'اضغط «New listing» بمجرد وصول البيانات — مهلة الـ 72 ساعة تُحسب من تاريخ الاستلام وليس من وقت الإدخال. يمكنك حفظ مسودة بالأساسيات فقط وإكمالها لاحقاً.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-completeness',
+        en: ['Completeness meter', 'It updates while you type. Red fields are required — the admin chooses them in Settings → Required fields. A draft can be saved at any %, but “Ready to publish” unlocks only at 100%.'],
+        ar: ['مؤشر الاكتمال', 'يتحدّث أثناء الكتابة. الحقول الحمراء مطلوبة، ويحددها الأدمن من Settings → Required fields. يمكن حفظ المسودة بأي نسبة، لكن زر «Ready to publish» لا يعمل إلا عند 100%.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-basics',
+        en: ['The basics build the reference code', 'Location + property type + sale/rent make the code LOC-TYPE-SERIAL-S/R, e.g. HD-A-1012-S: location code, unit-type code, one company-wide running number (the last one used on the website or in HV Ops + 1), S = sale, R = rent. These three lock after saving. “Date received” is the SLA start; only an admin can change it later.'],
+        ar: ['الأساسيات تصنع كود المرجع', 'المنطقة + نوع الوحدة + بيع/إيجار تكوّن الكود LOC-TYPE-SERIAL-S/R مثل HD-A-1012-S: كود المنطقة، كود نوع الوحدة، رقم مسلسل واحد للشركة كلها (آخر رقم مستخدم على الموقع أو في HV Ops + 1)، S = بيع و R = إيجار. هذه الثلاثة تُقفل بعد الحفظ. «Date received» هو بداية المهلة ولا يعدّله لاحقاً إلا الأدمن.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-media',
+        en: ['Media flags — the manager approves', 'Photos stay on the company intranet; nothing is uploaded here. Only a manager can set “Photos ready” to Yes after reviewing them — everyone else sees “Waiting for the manager”. A listing cannot reach 100% until it is Yes. Also answer: logo added, edited, and whether the cover photo belongs to this unit.'],
+        ar: ['علامات الصور — الموافقة للمدير', 'الصور تبقى على شبكة الشركة الداخلية ولا يُرفع شيء هنا. المدير فقط يستطيع وضع «Photos ready» = Yes بعد مراجعتها — والباقون يرون «بانتظار المدير». لا تصل الوحدة إلى 100% قبل أن تصبح Yes. أجب أيضاً: هل عليها اللوجو، هل عُدّلت، وهل صورة الغلاف تخص هذه الوحدة.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-commercial',
+        en: ['Specs, price and marketing', 'Fill area, floors, rooms, view and furnishing, then price, currency and “Price details” (per month, incl. maintenance…). Amounts are never converted between currencies. Facilities and selling points feed the website text.'],
+        ar: ['المواصفات والسعر والتسويق', 'املأ المساحة والأدوار والغرف والإطلالة والفرش، ثم السعر والعملة و«Price details» (شهرياً، شامل الصيانة…). المبالغ لا تُحوَّل أبداً بين العملات. المرافق ونقاط البيع تُستخدم في نص الموقع.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-owner',
+        en: ['Owner, source and uploader', 'Owner name and phone are searchable later. Source type and source name (who gave it) are needed to save. “Uploader” is the person who puts it online — by default the uploader set in Settings. “Entered by” is you, automatically: e.g. Sally enters, Lucy uploads, and each is credited for her own stage.'],
+        ar: ['المالك والمصدر ومن يرفع', 'اسم المالك ورقمه يمكن البحث بهما لاحقاً. نوع المصدر واسم المصدر (من أعطانا الوحدة) مطلوبان للحفظ. «Uploader» هو من سيرفعها على الموقع — افتراضياً الشخص المحدد في الإعدادات. «Entered by» هو أنت تلقائياً: مثلاً سالي تُدخل ولوسي ترفع، وكلٌّ منهما تُحتسب لها مرحلتها.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-save',
+        en: ['Save & generate code', 'Saving creates the reference code at once, adds the default publishing channels and opens the listing. A warning appears if another listing has the same title. (The tour never saves — it only shows the form.)'],
+        ar: ['الحفظ وإنشاء الكود', 'الحفظ يُنشئ كود المرجع فوراً ويضيف قنوات النشر الافتراضية ويفتح الوحدة. يظهر تنبيه إذا وُجدت وحدة أخرى بنفس العنوان. (الجولة لا تحفظ أي شيء — تعرض النموذج فقط.)'] },
+
+      // ---------------------------------------------------------------- Listing lifecycle & SLA (opens the most recent listing, read only)
+      { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'ref-code',
+        en: ['The code is the File Ref on the website', 'Press “Copy” and paste the code exactly into the WordPress “File Ref” field. That is how the website is matched: a missing or mistyped File Ref can never be verified, so the SLA keeps running.'],
+        ar: ['الكود = File Ref على الموقع', 'اضغط «Copy» والصق الكود كما هو في حقل «File Ref» في ووردبريس. بهذا تتم مطابقة الموقع: أي File Ref ناقص أو خاطئ لن يُتحقق منه أبداً وتظل المهلة تعدّ.'] },
+      { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'listing-actions',
+        en: ['Draft → Ready → Published → Verified', 'When every required field is filled press “Ready to publish”. The uploader puts it on the website, then presses “I uploaded it — mark as published”. “Verified live” is set by the verifier only — nobody sets it by hand. “Back to draft” returns it for corrections.'],
+        ar: ['مسودة ← جاهزة ← منشورة ← مؤكَّدة', 'عند اكتمال الحقول المطلوبة اضغط «Ready to publish». من يرفعها يضعها على الموقع ثم يضغط «I uploaded it — mark as published». حالة «Verified live» يضعها المُتحقِّق الآلي وحده — لا أحد يضعها يدوياً. «Back to draft» يعيدها للتصحيح.'] },
+      { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'listing-actions',
+        en: ['On hold, reject, archive', '“Put on hold” needs a reason and pauses the SLA clock; “Resume” restarts it. Managers can “Reject” (reason required; its KPI credit is cancelled), “Reopen as draft” and “Archive” — archived listings are hidden, never deleted.'],
+        ar: ['تعليق ورفض وأرشفة', '«Put on hold» يحتاج سبباً ويوقف عدّاد المهلة، و«Resume» يعيد تشغيله. المدير يستطيع «Reject» (بسبب إلزامي وتُلغى نقاط المؤشرات الخاصة بها)، و«Reopen as draft»، و«Archive» — الأرشفة تُخفي الوحدة ولا تحذفها أبداً.'] },
+      { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'sla-timeline',
+        en: ['Verified live — the clock stops', 'Every hour the verifier reads home-vacation.com and looks for each File Ref. When it finds yours it marks the listing verified live, saves the page link and stops the clock. Claimed published but still not found after 24h → a red “Claimed, not found” alert.'],
+        ar: ['التأكيد على الموقع — يتوقف العدّاد', 'كل ساعة يقرأ المُتحقِّق موقع home-vacation.com ويبحث عن كل File Ref. عندما يجد كودك يعلّم الوحدة «Verified live» ويحفظ رابط الصفحة ويوقف العدّاد. إذا قيل إنها نُشرت ولم يُعثر عليها بعد 24 ساعة ← تنبيه أحمر «Claimed, not found».'] },
+      { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'listing-channels',
+        en: ['Publishing channels', 'Each portal has its own status (not started, in progress, published, rejected) and link. The website channel is filled in by the verifier; add other portals with “+ Add channel…”. Portal coverage counts in the KPIs.'],
+        ar: ['قنوات النشر', 'لكل منصة حالتها (not started / in progress / published / rejected) ورابطها. قناة الموقع يملؤها المُتحقِّق تلقائياً؛ أضف منصات أخرى من «+ Add channel…». نسبة التغطية على المنصات تدخل في المؤشرات.'] },
+      { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'ai-export',
+        en: ['Export for AI', 'Builds a ready brief to paste into ChatGPT, Claude or any AI tool so it writes the website description, in the language you pick. The owner’s name and phone, the source and staff names are never included. “Basic Info .xlsx” exports this listing in the office sheet layout.'],
+        ar: ['التصدير للذكاء الاصطناعي', 'يجهّز نصاً كاملاً تلصقه في ChatGPT أو Claude أو أي أداة ليكتب وصف الموقع باللغة التي تختارها. اسم المالك ورقمه والمصدر وأسماء الموظفين لا تُضمَّن أبداً. زر «Basic Info .xlsx» يصدّر الوحدة بشكل ملف المكتب.'] },
+
+      // ---------------------------------------------------------------- Projects
+      { c: 'projects', page: 'projects', target: 'new-project',
+        en: ['Projects — compounds and resorts', 'Developer projects follow the same pipeline as units: entry → ready → uploaded → verified live, with their own, longer SLA. Each gets a Project ID P-LOC-SERIAL-S with its own running number. Hold, reject and archive work exactly as for listings.'],
+        ar: ['المشروعات — الكمباوندات والمنتجعات', 'مشروعات المطوّرين تمر بنفس مسار الوحدات: إدخال ← جاهز ← مرفوع ← مؤكَّد على الموقع، ولها مهلة خاصة أطول. كل مشروع يأخذ Project ID بالشكل P-LOC-SERIAL-S برقم مسلسل خاص بالمشروعات. التعليق والرفض والأرشفة تعمل تماماً مثل الوحدات.'] },
+      { c: 'projects', page: 'projects', action: 'open-new-project', target: 'pform-top',
+        en: ['The project form', 'Name, developer, location, unit types and sizes, starting price, down payment, installments, delivery date and finishing. Its required fields are set separately in Settings. As with listings, only a manager marks the photos & brochure ready.'],
+        ar: ['نموذج المشروع', 'الاسم والمطوّر والمنطقة وأنواع الوحدات ومساحاتها وسعر البداية والمقدم والأقساط وموعد الاستلام والتشطيب. الحقول المطلوبة للمشروعات تُحدَّد منفصلة في الإعدادات. ومثل الوحدات، المدير فقط يعلّم الصور والبروشور كجاهزة.'] },
+      { c: 'projects', page: 'projects', action: 'open-first-project', target: 'project-code',
+        en: ['Paste the Project ID', 'Copy the Project ID into the WordPress “Project ID” field. If it is left empty the website invents a PRJ-… number and the project can never be verified. Entering a project complete and getting it live on time both count in the KPIs.'],
+        ar: ['الصق الـ Project ID', 'انسخ الـ Project ID في حقل «Project ID» في ووردبريس. إذا تُرك فارغاً يخترع الموقع رقم PRJ-… ولن يتم التحقق من المشروع أبداً. إدخال المشروع كاملاً ونشره في الوقت يُحتسبان في المؤشرات.'] },
+
+      // ---------------------------------------------------------------- Needs photography
+      { c: 'photo', page: 'photo', target: 'add-photo',
+        en: ['Needs photography', 'Register a property here when it must be photographed before it can be listed — owner name and location are enough. It gets a PH-0001 number now and its real code later. Stages: needs scheduling → scheduled → shot → approved → listing created. Red = unscheduled for 2+ days or shoot overdue.'],
+        ar: ['طلبات التصوير', 'سجّل العقار هنا عندما يحتاج تصويراً قبل أن يُدخل كوحدة — يكفي اسم المالك والمنطقة. يأخذ رقماً مثل PH-0001 الآن وكوده الحقيقي لاحقاً. المراحل: يحتاج موعداً ← موعد محدد ← تم التصوير ← تمت الموافقة ← أُنشئت الوحدة. الأحمر = بلا موعد لأكثر من يومين أو تأخر التصوير.'] },
+      { c: 'photo', page: 'photo', action: 'open-photo-request', target: 'photo-form',
+        en: ['Assign and schedule', 'Write where exactly (building, unit, keys, access), pick the photographer, the shoot date & time and who gave the property. Once a date is saved the request moves to “Shoot scheduled”.'],
+        ar: ['التكليف وتحديد الموعد', 'اكتب المكان بالضبط (المبنى، الوحدة، المفاتيح، طريقة الدخول)، واختر المصوّر وموعد التصوير ومن أعطانا العقار. بمجرد حفظ الموعد ينتقل الطلب إلى «Shoot scheduled».'] },
+      { c: 'photo', page: 'photo', target: 'photo-actions',
+        en: ['Photos taken → the manager reviews', 'After the shoot press “Photos taken” and write the intranet folder name (required), the counts, logo and edited. The manager then presses “Approve photos” or “Needs re-shoot” with a note that goes back to the photographer.'],
+        ar: ['تم التصوير ← مراجعة المدير', 'بعد التصوير اضغط «Photos taken» واكتب اسم المجلد على الشبكة الداخلية (إلزامي) وعدد الصور والفيديو واللوجو والتعديل. ثم يضغط المدير «Approve photos» أو «Needs re-shoot» مع ملاحظة تعود للمصوّر.'] },
+      { c: 'photo', page: 'photo', target: 'photo-actions',
+        en: ['Create the listing', 'Once approved, anyone can press “Create the listing”: the form opens pre-filled with owner, location, type and source, and “Photos ready = Yes” travels with it. Every approved shoot is credited to the photographer.'],
+        ar: ['إنشاء الوحدة', 'بعد الموافقة يستطيع أي شخص الضغط على «Create the listing»: يُفتح النموذج مملوءاً بالمالك والمنطقة والنوع والمصدر، وتنتقل معه «Photos ready = Yes». كل تصوير تمت الموافقة عليه يُحتسب للمصوّر.'] },
+
+      // ---------------------------------------------------------------- Tasks & alerts
+      { c: 'tasks', page: 'tasks', target: 'task-board',
+        en: ['The task board', 'Four columns: To do, Doing, Review, Done (on a phone, one tab per column). Overdue cards turn red; done tasks stay visible for 14 days. The name filter at the top shows “My tasks”, everyone or one person.'],
+        ar: ['لوحة المهام', 'أربعة أعمدة: To do و Doing و Review و Done (على الموبايل تبويب لكل عمود). البطاقات المتأخرة تصبح حمراء، والمهام المنتهية تبقى ظاهرة 14 يوماً. فلتر الاسم بالأعلى يعرض «My tasks» أو الجميع أو شخصاً معيّناً.'] },
+      { c: 'tasks', page: 'tasks', action: 'open-new-task', target: 'task-form',
+        en: ['New task', 'Give a title, assignee, type, due date and priority; link a listing or an agency if it is about one. The assignee receives the task by e-mail (and WhatsApp when switched on) with a link that opens it.'],
+        ar: ['مهمة جديدة', 'اكتب العنوان والمسؤول والنوع وموعد التسليم والأولوية، واربطها بوحدة أو وكالة إن كانت تخصها. يستلم المسؤول المهمة بالإيميل (وواتساب عند تفعيله) مع رابط يفتحها مباشرة.'] },
+      { c: 'tasks', page: 'tasks', target: 'task-board',
+        en: ['Start → Review → Approve', 'Open a card: “Start”, then “Submit for review”. Only a manager can “Approve” it or “Send back” with a reason. On a computer you can also drag cards between columns. Done on time or late is counted in the KPIs and in HR.'],
+        ar: ['ابدأ ← مراجعة ← موافقة', 'افتح البطاقة: «Start» ثم «Submit for review». المدير فقط يستطيع «Approve» أو «Send back» مع سبب. على الكمبيوتر يمكن سحب البطاقات بين الأعمدة. الإنجاز في الوقت أو التأخير يُحتسب في المؤشرات وفي نظام HR.'] },
+      { c: 'tasks', page: 'tasks', target: 'recurring',
+        en: ['Recurring tasks (managers)', '“↻ Recurring” holds daily, weekly and monthly templates. Every night just after midnight (Cairo) that day’s tasks are created from the active templates. Pause or resume a template any time.'],
+        ar: ['المهام المتكررة (للمدير)', 'زر «↻ Recurring» فيه قوالب يومية وأسبوعية وشهرية. كل ليلة بعد منتصف الليل بتوقيت القاهرة تُنشأ مهام اليوم من القوالب المفعّلة. يمكن إيقاف أي قالب أو إعادة تشغيله في أي وقت.'] },
+      { c: 'tasks', page: 'alerts', target: 'alerts-list',
+        en: ['Alerts', 'The verifier raises alerts every hour: at risk, SLA breached, still incomplete after 24h, claimed but not found on the website, tasks due, and “verified live” news. Click an alert to open its record — it is marked read; “Mark all read” clears the rest. Critical alerts also show as a red bar on top of every page.'],
+        ar: ['التنبيهات', 'يُصدر المُتحقِّق التنبيهات كل ساعة: معرّض للتأخير، تجاوز المهلة، غير مكتمل بعد 24 ساعة، قيل إنه نُشر ولم يوجد على الموقع، مهام مستحقة، وأخبار «Verified live». اضغط التنبيه لفتح سجله فيُعلَّم كمقروء، و«Mark all read» يعلّم الباقي. التنبيهات الحرجة تظهر أيضاً كشريط أحمر أعلى كل صفحة.'] },
+
+      // ---------------------------------------------------------------- Agencies, KPIs & reports
+      { c: 'perf', page: 'agencies', target: 'agency-tabs',
+        en: ['Agency scorecards', 'One tab per agency — London Marketing Studios (social media & paid ads) and IZMI (SEO). Agencies have no login: our staff log their work. Pick the month at the top; “Print” gives the contract-renewal document. Visible to admins, managers and marketing.'],
+        ar: ['تقييم الوكالات', 'تبويب لكل وكالة — London Marketing Studios (السوشيال ميديا والإعلانات الممولة) و IZMI (السيو). الوكالات ليس لها دخول: موظفونا يسجّلون عملها. اختر الشهر بالأعلى، وزر «Print» يطبع مستند تجديد العقد. تظهر للأدمن والمديرين والتسويق.'] },
+      { c: 'perf', page: 'agencies', target: 'agency-deliverables',
+        en: ['Deliverables', 'Plan each month’s items (posts, reels, ads, articles, backlinks…) with planned vs delivered quantity, due date and a proof link; “Copy plan from last month” saves typing. Managers “Approve” submitted items or ask to “Revise” (counted as a revision).'],
+        ar: ['المخرجات', 'خطّط بنود كل شهر (بوستات، ريلز، إعلانات، مقالات، باك لينكس…) بالكمية المخططة مقابل المسلّمة وتاريخ الاستحقاق ورابط الإثبات؛ و«Copy plan from last month» يوفر الكتابة. المدير يضغط «Approve» على البنود المسلّمة أو «Revise» (تُحسب كمراجعة).'] },
+      { c: 'perf', page: 'agencies', target: 'agency-tiles',
+        en: ['The score', 'Delivery rate, on-time delivery, revision rate and cost per lead (ad spend ÷ leads, or the monthly fee ÷ leads for SEO). Monthly numbers such as reach and leads are typed in “Performance numbers”; amounts are never converted. The trend table compares the last 4 months.'],
+        ar: ['النتيجة', 'نسبة التسليم، التسليم في الموعد، نسبة المراجعات، وتكلفة العميل المحتمل (الإنفاق الإعلاني ÷ العملاء، أو الرسوم الشهرية ÷ العملاء للسيو). الأرقام الشهرية مثل الوصول والعملاء تُكتب في «Performance numbers» ولا تُحوَّل العملات. جدول الاتجاه يقارن آخر 4 أشهر.'] },
+      { c: 'perf', page: 'kpis', target: 'kpi-card',
+        en: ['How KPIs are scored', 'Stage 1 (entry) counts for whoever entered the listing: listings entered, completeness, hours received → ready, still incomplete, rejected. Stage 2 (upload) counts for the uploader: uploaded, verified live, hours ready → live, within 72h, portal coverage, claimed not found. Marketing: tasks, deliverables, shoots, media complete. Staff see only their own card.'],
+        ar: ['كيف تُحسب المؤشرات', 'المرحلة 1 (الإدخال) لمن أدخل الوحدة: عدد الوحدات، نسبة الاكتمال، الساعات من الاستلام حتى الجاهزية، غير المكتمل، المرفوض. المرحلة 2 (الرفع) لمن رفعها: المرفوع، المؤكَّد على الموقع، الساعات من الجاهزية حتى النشر، داخل 72 ساعة، تغطية المنصات، ما لم يُعثر عليه. التسويق: المهام والمخرجات والتصوير واكتمال الصور. كل موظف يرى بطاقته فقط.'] },
+      { c: 'perf', page: 'kpis', target: 'kpi-board',
+        en: ['Leaderboards and targets (managers)', 'Managers see a ranking per stage and for marketing, and set monthly targets per person with “Set targets”: green = met, red = missed. Only data entry, marketing and working managers are scored — admins / CEOs enter listings too but are never scored.'],
+        ar: ['الترتيب والأهداف (للمدير)', 'المدير يرى ترتيباً لكل مرحلة وللتسويق، ويحدد أهدافاً شهرية لكل شخص من «Set targets»: الأخضر = تحقق، الأحمر = لم يتحقق. يُقيَّم فقط موظفو الإدخال والتسويق والمديرون العاملون — الأدمن / المديرون التنفيذيون يُدخلون وحدات أيضاً لكن لا يُقيَّمون أبداً.'] },
+      { c: 'perf', page: 'kpis', target: 'kpi-note',
+        en: ['Fed into HR automatically', 'A listing entered complete, verified live and published within the SLA, projects, tasks done on time or late and approved shoots are sent to the HR KPI module for the linked employee. Rejecting a listing cancels its credit. Nobody without an HR employee link is credited.'],
+        ar: ['تنتقل إلى HR تلقائياً', 'الوحدة المُدخلة كاملة، والمؤكَّدة على الموقع، والمنشورة داخل المهلة، والمشروعات، والمهام في وقتها أو المتأخرة، والتصوير المعتمد — كلها تُرسل إلى وحدة المؤشرات في نظام HR للموظف المرتبط. رفض الوحدة يلغي نقاطها. من ليس له ربط بموظف في HR لا يُحتسب له شيء.'] },
+      { c: 'perf', page: 'reports', target: 'report-presets',
+        en: ['Reports (managers)', 'Daily (yesterday), weekly (last 7 days), monthly or a custom range, built live from the data: summary tiles, SLA distribution, the KPI table per person, and a breakdown by person, source, location, channel or agency.'],
+        ar: ['التقارير (للمدير)', 'يومي (أمس)، أسبوعي (آخر 7 أيام)، شهري أو فترة مخصصة، تُبنى مباشرة من البيانات: ملخص، توزيع المهلة، جدول المؤشرات لكل شخص، وتفصيل حسب الشخص أو المصدر أو المنطقة أو القناة أو الوكالة.'] },
+      { c: 'perf', page: 'reports', target: 'report-export',
+        en: ['Export, print, freeze', '“CSV” downloads the report, “Print / PDF” prints it with the logo, and “Freeze snapshot” stores it so a closed month never changes — reopen it later from “Frozen snapshots”.'],
+        ar: ['تصدير وطباعة وتجميد', '«CSV» ينزّل التقرير، و«Print / PDF» يطبعه باللوجو، و«Freeze snapshot» يحفظه حتى لا يتغير الشهر المُغلق أبداً — وتفتحه لاحقاً من «Frozen snapshots».'] },
+
+      // ---------------------------------------------------------------- Settings (admin only)
+      { c: 'settings', page: 'settings', action: 'settings-tab-loc', target: 'settings-body',
+        en: ['Location and unit-type codes', 'These codes build every reference code (its first and second part). Changing a code only affects new listings — existing codes never change. A code used twice is blocked.'],
+        ar: ['أكواد المناطق وأنواع الوحدات', 'هذه الأكواد تكوّن كل كود مرجع (الجزء الأول والثاني). تغيير الكود يؤثر على الوحدات الجديدة فقط — الأكواد الحالية لا تتغير أبداً. لا يُسمح بتكرار نفس الكود.'] },
+      { c: 'settings', page: 'settings', action: 'settings-tab-req', target: 'settings-body',
+        en: ['Required fields', 'Tick the fields that count toward 100% — separately for listings and for projects. A listing cannot become ready to publish until all are filled; existing listings are re-scored the next time they are saved.'],
+        ar: ['الحقول المطلوبة', 'علّم الحقول التي تُحتسب في الـ 100% — منفصلة للوحدات وللمشروعات. لا تصبح الوحدة جاهزة للنشر قبل ملئها كلها؛ والوحدات الحالية يُعاد حسابها عند حفظها التالي.'] },
+      { c: 'settings', page: 'settings', action: 'settings-tab-sla', target: 'settings-body',
+        en: ['SLA & workflow', 'Set the hours for “at risk”, “breached”, the incomplete alert and “claimed, not found” — for listings and, separately, for projects — and the default uploader who receives every new listing to put online.'],
+        ar: ['المهلة وسير العمل', 'حدد ساعات «معرّض للتأخير» و«تجاوز المهلة» وتنبيه عدم الاكتمال و«قيل إنه نُشر ولم يوجد» — للوحدات وللمشروعات كلٌّ على حدة — والشخص الافتراضي الذي تُسلَّم له كل وحدة جديدة ليرفعها.'] },
+      { c: 'settings', page: 'settings', action: 'settings-tab-lists', target: 'settings-tabs',
+        en: ['Portals, lists, KPI metrics, agencies', '“Portals” picks the channels every new listing gets. “Lists” holds facilities, views, currencies, task and deliverable types and the AI export instructions. “KPI metrics” defines each agency’s monthly numbers, and “Agencies” holds the contracts (fee, dates, contact, scope).'],
+        ar: ['المنصات والقوائم ومؤشرات الوكالات والعقود', '«Portals» يحدد القنوات التي تأخذها كل وحدة جديدة. «Lists» فيها المرافق والإطلالات والعملات وأنواع المهام والمخرجات وتعليمات التصدير للذكاء الاصطناعي. «KPI metrics» تحدد أرقام كل وكالة الشهرية، و«Agencies» فيها العقود (الرسوم، التواريخ، جهة الاتصال، النطاق).'] },
+      { c: 'settings', page: 'settings', action: 'settings-tab-verifier', target: 'settings-body',
+        en: ['Verifier & messages', 'The worker URL enables “Run verifier now”. Below: every task message sent by e-mail or WhatsApp from HV Ops and Maintenance (sent every 5 minutes; “skipped” = no real e-mail / phone in HR) and the log of the last verifier runs.'],
+        ar: ['المُتحقِّق والرسائل', 'رابط الـ worker يفعّل زر «Run verifier now». بالأسفل: كل رسائل المهام المرسلة بالإيميل أو واتساب من HV Ops والصيانة (تُرسل كل 5 دقائق؛ «skipped» = لا يوجد إيميل / رقم حقيقي في HR)، وسجل آخر مرات تشغيل المُتحقِّق.'] },
+
+      // ---------------------------------------------------------------- Roles, permissions & systems
+      { c: 'roles', page: 'dashboard', action: 'open-more', target: 'user-card',
+        en: ['Four roles', 'Admin: everything, including Settings. Marketing manager: approvals, reports and targets. Data entry: listings, projects, photography, tasks and own KPIs (no Agencies). Marketing: agencies, tasks, shoots and own KPIs. Logins, roles and HV Ops access are managed in HR → Users (Settings → Users only lists them).'],
+        ar: ['أربعة أدوار', 'Admin: كل شيء بما فيها الإعدادات. Marketing manager: الموافقات والتقارير والأهداف. Data entry: الوحدات والمشروعات والتصوير والمهام ومؤشراته فقط (بدون الوكالات). Marketing: الوكالات والمهام والتصوير ومؤشراته. الدخول والأدوار وتفعيل HV Ops تُدار من HR → Users (وصفحة Settings → Users تعرضهم فقط).'] },
+      { c: 'roles', page: 'dashboard', action: 'open-more', target: 'user-card',
+        en: ['What only managers do', 'Approving photos, tasks and agency deliverables, rejecting and archiving, the audit trail on every listing and project, KPI targets, reports and frozen snapshots. A listing can be edited by a manager, by whoever entered it, or by its uploader.'],
+        ar: ['ما يفعله المدير فقط', 'اعتماد الصور والمهام ومخرجات الوكالات، الرفض والأرشفة، سجل التعديلات في كل وحدة ومشروع، أهداف المؤشرات، التقارير واللقطات المجمّدة. يعدّل الوحدة المدير أو من أدخلها أو من سيرفعها.'] },
+      { c: 'roles', page: 'dashboard', action: 'open-more', target: 'systems',
+        en: ['Systems switcher', 'One username and password for every Home Vacation system. The “Systems” links (on a phone: inside “More”) open the other systems ticked for you in HR — HR & Payroll, Maintenance, the CRM, HV Finance. “Sign out” is just below.'],
+        ar: ['التنقل بين الأنظمة', 'اسم مستخدم وكلمة مرور واحدة لكل أنظمة Home Vacation. روابط «Systems» (على الموبايل داخل «More») تفتح الأنظمة المفعّلة لك في HR — الموارد البشرية والرواتب، الصيانة، الـ CRM، والمالية HV Finance. زر «Sign out» تحتها مباشرة.'] },
+      { c: 'roles', page: 'dashboard', target: null,
+        en: ['Help any time', 'The “Tour” button explains the page you are on, replays the full tour or opens this guide with every chapter. A new page added to the menu joins the tour automatically.'],
+        ar: ['المساعدة في أي وقت', 'زر «Tour» يشرح الصفحة التي أنت عليها، أو يعيد الجولة كاملة، أو يفتح هذا الدليل بكل فصوله. أي صفحة جديدة تُضاف للقائمة تدخل الجولة تلقائياً.'] },
+    ];
+    /* HV-TOUR-STEPS-END */
 
     // =========================================================================================
     // ALERTS
@@ -2306,13 +2525,13 @@ Rules:
             <Btn kind="ghost" onClick={() => setOnlyUnread(!onlyUnread)}>{onlyUnread ? 'Show all' : 'Unread only'}</Btn>
             <Btn kind="ghost" onClick={() => mark(data.alerts.filter((a) => !a.is_read).map((a) => a.id))}>Mark all read</Btn>
           </PageHeader>
-          {!rows.length ? <Empty>No {onlyUnread ? 'unread ' : ''}alerts.</Empty> : (
+          <div data-tour="alerts-list">{!rows.length ? <Empty>No {onlyUnread ? 'unread ' : ''}alerts.</Empty> : (
             <div className="space-y-2">{rows.map((a) => (
               <Card key={a.id} className={`cursor-pointer border-l-4 p-3 ${ALERT_STYLE[a.level]} ${a.is_read ? 'opacity-60' : ''}`} onClick={() => openAlert(a)}>
                 <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold text-slate-900">{a.title}</div><span className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(a.created_at)}</span></div>
                 {a.body && <div className="mt-0.5 break-words text-sm text-slate-600">{a.body}</div>}
               </Card>))}</div>
-          )}
+          )}</div>
         </div>
       );
     };
@@ -2466,13 +2685,15 @@ Rules:
     const SettingsPage = () => {
       const { cfg, data, saveSetting } = useApp();
       const [tab, setTab] = useState('users');
+      useTourAction(Object.fromEntries(['users', 'loc', 'types', 'req', 'sla', 'portals', 'lists', 'metrics', 'agencies', 'verifier'].map((k) => [`settings-tab-${k}`, () => setTab(k)])));
       const [preq, setPreq] = useState(cfg.project_required_fields || []); const [psla, setPsla] = useState(cfg.project_sla_hours || {});
       const [sla, setSla] = useState(cfg.sla_hours || {}); const [req, setReq] = useState(cfg.required_fields || []); const [chans, setChans] = useState(cfg.default_channels || []); const [labels, setLabels] = useState(cfg.portal_labels || {});
       const candidates = Object.keys(FIELD_LABEL).filter((k) => !['date_received', 'source_type', 'source_name', 'assigned_to'].includes(k));
       return (
         <div>
           <PageHeader title="Settings" sub="Admin only" />
-          <Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier & messages']]} />
+          <div data-tour="settings-tabs"><Tabs value={tab} onChange={setTab} tabs={[['users', 'Users'], ['loc', 'Location codes'], ['types', 'Unit type codes'], ['req', 'Required fields'], ['sla', 'SLA & workflow'], ['portals', 'Portals'], ['lists', 'Lists'], ['metrics', 'KPI metrics'], ['agencies', 'Agencies'], ['verifier', 'Verifier & messages']]} /></div>
+          <div data-tour="settings-body">
           {tab === 'users' && <UsersTab />}
           {tab === 'loc' && <KVEditor settingKey="location_codes" nameLabel="Location (as on the website)" codeLabel="Code" hint="First part of the reference code (HD-A-1012-S). Changing a code only affects NEW listings — existing codes never change." />}
           {tab === 'types' && <KVEditor settingKey="unit_type_codes" nameLabel="Unit type" codeLabel="Code" hint="Second part of the reference code." />}
@@ -2510,6 +2731,7 @@ Rules:
           {tab === 'metrics' && <MetricDefsEditor />}
           {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
           {tab === 'verifier' && <VerifierTab />}
+          </div>
         </div>
       );
     };
@@ -2683,6 +2905,43 @@ Rules:
         } catch (e) { toast(String(e.message || e), 'error'); return null; }
       }, [cfg.worker_url, toast]);
 
+      // Guide tour — the shared engine (hv-shared.pages.dev/hv-tour.js, loaded async in <head>) reads the live values through this ref.
+      // Optional: if the script never loads, nothing here changes how the app works. Started on the script's load event,
+      // with a 1-second poll as a fallback that gives up after about 60 seconds.
+      const tourRef = useRef({}); const phoneNavRef = useRef(null);
+      tourRef.current = { ...tourRef.current, me, go, more, data };
+      useEffect(() => {
+        let done = false, tries = 0, timer = null, moreByTour = false;
+        const onTour = (e) => {        // steps about a listing / project page open the most recent one (read only)
+          const a = e.detail && e.detail.action; const { data: d, go: nav } = tourRef.current; if (!d || !nav) return;
+          if (a === 'open-more' && window.innerWidth < 768 && !tourRef.current.more) { moreByTour = true; setMore(true); }     // phone: roles & systems live in "More"
+          if (a === 'close' && moreByTour) { moreByTour = false; setMore(false); }
+          if (a === 'open-first-listing') { const l = d.listings.find((x) => bucketOf(x.status) === 'work') || d.listings[0]; if (l) nav('listing', l.id); }
+          if (a === 'open-first-project') { const x = d.projects.find((y) => bucketOf(y.status) === 'work') || d.projects[0]; if (x) nav('project', x.id); }
+        };
+        window.addEventListener('hv-tour', onTour);
+        const boot = () => {
+          if (done || !window.HVTour) return done;
+          done = true; clearInterval(timer);
+          window.HVTour.init({
+            app: 'ops', color: '#0f3d4c', userId: () => (tourRef.current.me && tourRef.current.me.id) || null, lang: () => 'en',
+            // "Explain this page" on a listing / project opens that chapter; during the tour the real page is reported
+            getPage: () => { const pg = tourRef.current.page; return !document.querySelector('.hvt-root') && ({ listing: 'listings', project: 'projects' })[pg] || pg; },
+            goPage: (k) => tourRef.current.go(k), chapters: HV_TOUR_CHAPTERS, steps: HV_TOUR_STEPS,
+            // phone: sit 12px above the bottom tab bar (its height includes the iPhone safe area); desktop: nothing floats at the bottom right
+            bottomOffset: { get mobile() { const n = phoneNavRef.current; return (n && n.offsetHeight ? n.offsetHeight : 57) + 12; }, desktop: 24 },
+            hidden: () => !!tourRef.current.more,       // the phone "More" sheet covers the bottom of the screen
+          });
+          return true;
+        };
+        const tag = document.getElementById('hv-tour-js');
+        if (!boot()) {
+          if (tag) tag.addEventListener('load', boot);
+          timer = setInterval(() => { if (boot() || ++tries >= 60) clearInterval(timer); }, 1000);
+        }
+        return () => { clearInterval(timer); if (tag) tag.removeEventListener('load', boot); window.removeEventListener('hv-tour', onTour); };
+      }, []);
+
       if (!connected) return <ConnectScreen onDone={() => setConnected(true)} />;
       if (session === undefined) return <div id="boot">Loading HV Ops…</div>;
       if (!session) return <Login notice={notice} onReconfigure={() => { try { localStorage.removeItem('hvops_sb_url'); localStorage.removeItem('hvops_sb_key'); } catch (e) {} sbc = null; setConnected(false); }} />;
@@ -2692,13 +2951,14 @@ Rules:
       const nav = NAV.filter((n) => n[3](me));
       const unread = data.alerts.filter((a) => !a.is_read); const critical = unread.filter((a) => a.level === 'critical');
       const page = nav.some((n) => n[0] === route.page) || route.page === 'listing' || route.page === 'project' ? route.page : 'dashboard';
+      tourRef.current.page = page;
       const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
       const navBtn = (n, mobile) => {
         const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : n[0] === 'photo' ? data.photo_requests.filter((r) => isMgr(me) ? ['requested', 'shot'].includes(r.status) : (r.assigned_to === me.id && ['requested', 'scheduled'].includes(r.status))).length : 0;
         return mobile ? (
-          <button key={n[0]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
+          <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
         ) : (
-          <button key={n[0]} onClick={() => go(n[0])} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'}`}><Icon name={n[2]} /><span className="flex-1 text-left">{n[1]}</span>{count > 0 && <span className="rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">{count}</span>}</button>
+          <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'}`}><Icon name={n[2]} /><span className="flex-1 text-left">{n[1]}</span>{count > 0 && <span className="rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">{count}</span>}</button>
         );
       };
 
@@ -2708,9 +2968,9 @@ Rules:
             {/* desktop sidebar */}
             <aside className="no-print fixed inset-y-0 hidden w-56 flex-col bg-brand-800 p-3 md:flex">
               <div className="mb-4 flex items-center gap-2 px-2 pt-1"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-1"><img src={LOGO_MARK} alt="Home Vacation" className="h-full w-full object-contain" /></div><div><div className="text-sm font-bold text-white">HV Ops</div><div className="text-[11px] text-brand-200">{APP_VERSION}</div></div></div>
-              <nav className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
-              <div className={`mb-3 border-t border-white/10 pt-3 ${systems && HV_APPS.some((a) => systems[a[2]]) ? '' : 'hidden'}`}><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
-              <div className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
+              <nav data-tour="menu" className="flex-1 space-y-1">{nav.map((n) => navBtn(n, false))}</nav>
+              <div data-tour="systems" className={`mb-3 border-t border-white/10 pt-3 ${systems && HV_APPS.some((a) => systems[a[2]]) ? '' : 'hidden'}`}><div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-brand-200">Systems</div>{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-1 text-xs text-brand-100 hover:bg-white/10">↗ {label}</a>)}</div>
+              <div data-tour="user-card" className="border-t border-white/10 pt-3"><div className="truncate px-2 text-sm font-medium text-white">{me.full_name || me.email}</div><div className="px-2 text-xs text-brand-200">{ROLE_LABEL[me.role]}</div>
                 <button onClick={() => sbc.auth.signOut()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-brand-100 hover:bg-white/10"><Icon name="logout" className="h-4 w-4" />Sign out</button></div>
             </aside>
 
@@ -2738,16 +2998,18 @@ Rules:
             </main>
 
             {/* phone bottom tabs */}
-            <nav className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white md:hidden">
+            <nav ref={phoneNavRef} className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white md:hidden">
+              <div data-tour="menu" className="flex w-full">{/* tour anchor inside the fixed bar: the engine skips position:fixed elements themselves */}
               {nav.slice(0, 4).map((n) => navBtn(n, true))}
               <button onClick={() => setMore(true)} className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${nav.slice(4).some((n) => n[0] === page) ? 'text-brand-700' : 'text-slate-500'}`}><Icon name="more" />More</button>
+              </div>
             </nav>
             {more && (
               <div className="no-print fixed inset-0 z-40 flex items-end bg-slate-900/50 md:hidden" onClick={() => setMore(false)}>
                 <div className="safe-bottom w-full rounded-t-2xl bg-white p-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
-                  {nav.slice(4).map((n) => <button key={n[0]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
-                  <div className="my-1 border-t border-slate-100 pt-1">{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
+                  <div data-tour="user-card" className="mb-2 px-2"><div className="font-semibold text-slate-900">{me.full_name || me.email}</div><div className="text-xs text-slate-500">{ROLE_LABEL[me.role]} · HV Ops {APP_VERSION}</div></div>
+                  {nav.slice(4).map((n) => <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50"><Icon name={n[2]} />{n[1]}</button>)}
+                  <div data-tour="systems" className="my-1 border-t border-slate-100 pt-1">{HV_APPS.filter((a) => systems && systems[a[2]]).map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg px-2 py-2.5 text-sm text-slate-600 hover:bg-slate-50">↗ {label}</a>)}</div>
                   <button onClick={() => sbc.auth.signOut()} className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-sm font-medium text-rose-700 hover:bg-rose-50"><Icon name="logout" />Sign out</button>
                 </div>
               </div>

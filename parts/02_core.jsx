@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.15.0';
+    const APP_VERSION = 'v1.16.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -247,7 +247,7 @@
       if (s.state === 'none') return null;
       const st = SLA_STYLE[s.state];
       const text = s.verified ? `Live in ${fmtHours(s.hours)}` : s.onHold ? `Paused · ${fmtHours(s.hours)}` : s.remaining >= 0 ? `${fmtHours(s.remaining)} left` : `${fmtHours(-s.remaining)} over`;
-      return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${st.chip}`}><span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{text}</span>;
+      return <span data-tour="sla-chip" className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${st.chip}`}><span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{text}</span>;
     };
     const StatusBadge = ({ status }) => { const s = LISTING_STATUS[status] || [status, '']; return <Badge className={s[1]}>{s[0]}</Badge>; };
     // Single-series bar chart. Values are labelled directly so no axis is needed.

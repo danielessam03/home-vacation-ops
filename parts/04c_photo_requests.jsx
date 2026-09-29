@@ -34,7 +34,7 @@
       return (
         <Modal wide title={request ? `Edit ${photoNo(request)}` : 'Property that needs photography'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Btn></>}>
           <p className="mb-3 text-sm text-slate-500">Use this when a property has to be photographed <b>before</b> it can be entered as a listing. It gets its real code (AH-A-1049-S) later, when the listing is created from here.</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div data-tour="photo-form" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Field label="Owner name" bad={bad.owner_name} className="col-span-2"><input className={inputCls(bad.owner_name)} value={f.owner_name} onChange={(e) => set('owner_name', e.target.value)} autoFocus /></Field>
             <Field label="Owner phone"><input className={inputCls()} value={f.owner_phone || ''} onChange={(e) => set('owner_phone', e.target.value)} /></Field>
             <Field label="Location" bad={bad.location}><Select bad={bad.location} value={f.location} onChange={(v) => set('location', v)} options={Object.keys(cfg.location_codes || {}).sort()} /></Field>
@@ -98,7 +98,7 @@
           </div>
           {r.revision_note && r.status !== 'ready' && <div className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-900">Manager asked: {r.revision_note}</div>}
           {r.status === 'cancelled' && <div className="mt-2 text-xs text-slate-500">Reason: {r.cancel_reason}</div>}
-          <div className="no-print mt-3 flex flex-wrap gap-2">
+          <div data-tour="photo-actions" className="no-print mt-3 flex flex-wrap gap-2">
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onEdit(r)}>{r.status === 'requested' ? 'Assign / schedule' : 'Edit'}</Btn>}
             {can && ['requested', 'scheduled'].includes(r.status) && <Btn className="!py-1.5" onClick={() => onShot(r)}>Photos taken</Btn>}
             {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) toast('Photos approved'); }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
@@ -114,6 +114,7 @@
     const PhotoRequestsPage = () => {
       const { data, now, save, go, toast, reloadTable } = useApp();
       const [q, setQ] = useState(''); const [form, setForm] = useState(null); const [shot, setShot] = useState(null); const [reason, setReason] = useState(null); const [convert, setConvert] = useState(null); const [showDone, setShowDone] = useState(false);
+      useTourAction({ 'open-photo-request': () => { if (form) return false; setForm({}); }, close: () => setForm(null) });
       const s = q.trim().toLowerCase();
       const rows = data.photo_requests.filter((r) => !s || `${photoNo(r)} ${r.owner_name} ${r.owner_phone || ''} ${r.location} ${r.address_notes || ''}`.toLowerCase().includes(s));
       const openCount = rows.filter((r) => !['converted', 'cancelled'].includes(r.status)).length;
@@ -121,7 +122,7 @@
         <div>
           <PageHeader title="Needs photography" sub={`${openCount} open · properties waiting for a shoot before they become listings`}>
             <Btn kind="ghost" onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide finished' : 'Show finished'}</Btn>
-            <Btn onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add property</Btn>
+            <Btn data-tour="add-photo" onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add property</Btn>
           </PageHeader>
           <input className={`${inputCls()} no-print mb-4`} placeholder="Search owner, phone, location…" value={q} onChange={(e) => setQ(e.target.value)} />
           {!rows.length && <Empty>Nothing on the photography list. Add a property that has to be photographed before it can be listed.</Empty>}

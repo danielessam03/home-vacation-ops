@@ -78,7 +78,7 @@
       return (
         <div>
           <PageHeader title="Agencies" sub="Contract scorecards — the renewal document"><MonthPicker value={month} onChange={setMonth} /><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print</Btn></PageHeader>
-          <Tabs value={agency.id} onChange={setAid} tabs={agencies.map((a) => [a.id, a.display_name])} />
+          <div data-tour="agency-tabs"><Tabs value={agency.id} onChange={setAid} tabs={agencies.map((a) => [a.id, a.display_name])} /></div>
           <div className="space-y-4">
             <Card className="p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -89,14 +89,14 @@
               {me.role === 'admin' && <p className="no-print mt-1 text-xs text-slate-400">Edit the contract in Settings → Agencies.</p>}
             </Card>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div data-tour="agency-tiles" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Tile label={`Delivery rate${delta('delivery_rate') != null ? ` (${delta('delivery_rate') >= 0 ? '+' : ''}${delta('delivery_rate')} vs prev)` : ''}`} value={sc.delivery_rate == null ? null : `${sc.delivery_rate}%`} />
               <Tile label="On-time delivery" value={sc.on_time_pct == null ? null : `${sc.on_time_pct}%`} />
               <Tile label="Revision rate" value={sc.revision_rate == null ? null : `${sc.revision_rate}%`} />
               <Tile label={`Cost per lead (${sc.cpl_basis})`} value={sc.cpl == null ? null : money(sc.cpl, sc.currency)} />
             </div>
 
-            <Card className="p-4">
+            <Card data-tour="agency-deliverables" className="p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-brand-800">Deliverables — {monthLabel(month)} · {sc.delivered}/{sc.planned} delivered</h3>
                 {canWrite && <div className="no-print flex gap-2">{!items.length && <Btn kind="ghost" className="!py-1.5" onClick={copyLast}>Copy plan from last month</Btn>}<Btn className="!py-1.5" onClick={() => setForm({})}><Icon name="plus" className="h-4 w-4" />Add</Btn></div>}
@@ -185,7 +185,7 @@
         const rs = rows.filter(keep).sort((a, b) => (b.k[sortKey] || 0) - (a.k[sortKey] || 0));
         if (!rs.length) return null;
         return (
-          <Card className="scroll-x p-4">
+          <Card data-tour="kpi-board" className="scroll-x p-4">
             <h3 className="mb-3 text-sm font-semibold text-brand-800">{title}</h3>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500"><tr><th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Name</th>{cols.map((c) => <th key={c.key} className="px-2 py-1.5 text-right font-medium">{c.label}</th>)}</tr></thead>
@@ -203,12 +203,12 @@
         <div>
           <PageHeader title="KPIs" sub="Value / target. Green = target met."><MonthPicker value={month} onChange={setMonth} /></PageHeader>
           <div className="space-y-4">
-            {mgr && <p className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
+            {mgr && <p data-tour="kpi-note" className="text-xs text-slate-500">CEOs / admins enter listings too but are not scored. The same numbers feed the HR KPI module automatically.</p>}
             {mgr && board('Stage 1 — data & photos entered', (r) => r.k.listings_entered > 0 || r.k.projects_entered > 0, 'listings_entered', defs.filter((d) => d.part === 'entry'))}
             {mgr && board('Stage 2 — uploaded online', (r) => r.k.listings_uploaded > 0 || r.k.waiting_upload > 0 || r.k.projects_uploaded > 0, 'listings_uploaded', defs.filter((d) => d.part === 'upload'))}
             {mgr && board('Marketing', (r) => r.p.role === 'marketing', 'tasks_completed', defs.filter((d) => d.team === 'marketing'))}
             {rows.map(({ p, k }) => (
-              <Card key={p.id} className="p-4">
+              <Card key={p.id} data-tour="kpi-card" className="p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div><h3 className="font-semibold text-slate-900">{k.name}</h3><p className="text-xs text-slate-500">{ROLE_LABEL[p.role]} · {monthLabel(month)}</p></div>
                   {mgr && <Btn kind="ghost" className="no-print !py-1.5" onClick={() => setTarget(p)}>Set targets</Btn>}

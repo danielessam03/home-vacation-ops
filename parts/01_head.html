@@ -13,6 +13,9 @@
   <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- shared guide tour (Tour button) — optional: the app works the same if it fails to load.
+       async, NOT defer: a deferred script that cannot connect holds back DOMContentLoaded, and Babel starts the app only then (tested: +22s) -->
+  <script id="hv-tour-js" src="https://hv-shared.pages.dev/hv-tour.js" async onerror="var s=document.createElement('script');s.id='hv-tour-js2';s.async=true;s.src='https://hvshared-home-vacation.pages.dev/hv-tour.js';document.head.appendChild(s)"></script>
   <script>
     tailwind.config = { theme: { extend: { colors: { brand: { 50:'#eef7f8',100:'#d5ebee',200:'#a9d5dc',500:'#1b7f93',600:'#14677a',700:'#0f5264',800:'#0f3d4c',900:'#0b2c38' } } } } };
   </script>

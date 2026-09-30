@@ -5,12 +5,16 @@
     // Export: any listing back into exactly the same sheet layout (one file, or one workbook with a sheet per listing).
     // Folder / file names like "Maged Makram Rabella AH-A-1025-R" give the owner and the existing File Ref.
     // =========================================================================================
+    // this address first (vendor/, shipped by hv-shared/kit), the public CDN as fallback
+    const EXCELJS_LOCAL = 'vendor/exceljs-4.4.0.min.js';
     const EXCELJS_SRC = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
     let excelJsPromise = null;
     const loadExcelJS = () => excelJsPromise || (excelJsPromise = new Promise((resolve, reject) => {
       if (window.ExcelJS) { resolve(window.ExcelJS); return; }
+      const fail = () => { excelJsPromise = null; reject(new Error('Could not load the Excel reader — check the internet connection.')); };
+      if (window.HVCore) { HVCore.loadScript(EXCELJS_LOCAL, EXCELJS_SRC).then(() => resolve(window.ExcelJS), fail); return; }
       const s = document.createElement('script'); s.src = EXCELJS_SRC; s.async = true;
-      s.onload = () => resolve(window.ExcelJS); s.onerror = () => { excelJsPromise = null; reject(new Error('Could not load the Excel reader — check the internet connection.')); };
+      s.onload = () => resolve(window.ExcelJS); s.onerror = fail;
       document.head.appendChild(s);
     }));
 

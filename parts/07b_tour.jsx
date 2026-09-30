@@ -1,6 +1,6 @@
 
     // =========================================================================================
-    // GUIDE TOUR — the content for the shared tour engine (https://hv-shared.pages.dev/hv-tour.js).
+    // GUIDE TOUR — the content for the shared tour engine (hv-tour.js, shipped with the app by hv-shared/kit).
     // The engine draws the "Tour" button, the spotlight and the guide; it is started once in App (08_settings_app.jsx).
     // Anchors: data-tour="<target>" on the elements below, data-tour-nav="<page>" on every menu item
     // (a new menu page with no written step still gets an automatic step).

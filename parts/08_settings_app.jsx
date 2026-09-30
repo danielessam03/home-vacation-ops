@@ -401,7 +401,7 @@
         } catch (e) { toast(String(e.message || e), 'error'); return null; }
       }, [cfg.worker_url, toast]);
 
-      // Guide tour — the shared engine (hv-shared.pages.dev/hv-tour.js, loaded async in <head>) reads the live values through this ref.
+      // Guide tour — the shared engine (hv-tour.js shipped by hv-shared/kit, loaded async in <head>) reads the live values through this ref.
       // Optional: if the script never loads, nothing here changes how the app works. Started on the script's load event,
       // with a 1-second poll as a fallback that gives up after about 60 seconds.
       const tourRef = useRef({}); const phoneNavRef = useRef(null);

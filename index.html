@@ -7,15 +7,23 @@
   <meta name="robots" content="noindex,nofollow" />
   <title>HV Ops</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f3d4c'/%3E%3Ctext x='32' y='42' font-family='Arial' font-weight='700' font-size='26' fill='white' text-anchor='middle'%3EHV%3C/text%3E%3C/svg%3E" />
-  <!-- PINNED CDNs — do not unpin, do not change data-presets (react ONLY) -->
-  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- shared guide tour (Tour button) — optional: the app works the same if it fails to load.
-       async, NOT defer: a deferred script that cannot connect holds back DOMContentLoaded, and Babel starts the app only then (tested: +22s) -->
-  <script id="hv-tour-js" src="https://hv-shared.pages.dev/hv-tour.js" async onerror="var s=document.createElement('script');s.id='hv-tour-js2';s.async=true;s.src='https://hvshared-home-vacation.pages.dev/hv-tour.js';document.head.appendChild(s)"></script>
+  <!-- HV Core FIRST (hv-shared/kit): saved copy of the app in the browser, links to the other systems try every address,
+       and a help panel instead of a blank page. Every code file is served from THIS address (vendor/, PINNED versions —
+       do not unpin, do not change data-presets: react ONLY) with the public CDN only as a fallback. -->
+  <script src="hv-core.js" data-app="ops"></script>
+  <script src="vendor/react-18.3.1.min.js"></script>
+  <script>window.React||document.write('<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"><\/script>')</script>
+  <script src="vendor/react-dom-18.3.1.min.js"></script>
+  <script>window.ReactDOM||document.write('<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>')</script>
+  <script src="vendor/babel-7.25.6.min.js"></script>
+  <script>window.Babel||document.write('<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"><\/script>')</script>
+  <script src="vendor/tailwind-3.4.17.js"></script>
+  <script>window.tailwind||document.write('<script src="https://cdn.tailwindcss.com/3.4.17"><\/script>')</script>
+  <script src="vendor/supabase-2.117.2.js"></script>
+  <script>window.supabase||document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"><\/script>')</script>
+  <!-- shared guide tour (Tour button; the same engine in every HV system, shipped with each one by hv-shared/kit) —
+       optional: the app works the same if it fails to load. async, NOT defer (a deferred script holds back DOMContentLoaded). -->
+  <script id="hv-tour-js" src="hv-tour.js" async></script>
   <script>
     tailwind.config = { theme: { extend: { colors: { brand: { 50:'#eef7f8',100:'#d5ebee',200:'#a9d5dc',500:'#1b7f93',600:'#14677a',700:'#0f5264',800:'#0f3d4c',900:'#0b2c38' } } } } };
   </script>
@@ -47,7 +55,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.16.0';
+    const APP_VERSION = 'v1.17.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -1433,12 +1441,16 @@ Rules:
     // Export: any listing back into exactly the same sheet layout (one file, or one workbook with a sheet per listing).
     // Folder / file names like "Maged Makram Rabella AH-A-1025-R" give the owner and the existing File Ref.
     // =========================================================================================
+    // this address first (vendor/, shipped by hv-shared/kit), the public CDN as fallback
+    const EXCELJS_LOCAL = 'vendor/exceljs-4.4.0.min.js';
     const EXCELJS_SRC = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
     let excelJsPromise = null;
     const loadExcelJS = () => excelJsPromise || (excelJsPromise = new Promise((resolve, reject) => {
       if (window.ExcelJS) { resolve(window.ExcelJS); return; }
+      const fail = () => { excelJsPromise = null; reject(new Error('Could not load the Excel reader — check the internet connection.')); };
+      if (window.HVCore) { HVCore.loadScript(EXCELJS_LOCAL, EXCELJS_SRC).then(() => resolve(window.ExcelJS), fail); return; }
       const s = document.createElement('script'); s.src = EXCELJS_SRC; s.async = true;
-      s.onload = () => resolve(window.ExcelJS); s.onerror = () => { excelJsPromise = null; reject(new Error('Could not load the Excel reader — check the internet connection.')); };
+      s.onload = () => resolve(window.ExcelJS); s.onerror = fail;
       document.head.appendChild(s);
     }));
 
@@ -2293,7 +2305,7 @@ Rules:
     };
 
     // =========================================================================================
-    // GUIDE TOUR — the content for the shared tour engine (https://hv-shared.pages.dev/hv-tour.js).
+    // GUIDE TOUR — the content for the shared tour engine (hv-tour.js, shipped with the app by hv-shared/kit).
     // The engine draws the "Tour" button, the spotlight and the guide; it is started once in App (08_settings_app.jsx).
     // Anchors: data-tour="<target>" on the elements below, data-tour-nav="<page>" on every menu item
     // (a new menu page with no written step still gets an automatic step).
@@ -2905,7 +2917,7 @@ Rules:
         } catch (e) { toast(String(e.message || e), 'error'); return null; }
       }, [cfg.worker_url, toast]);
 
-      // Guide tour — the shared engine (hv-shared.pages.dev/hv-tour.js, loaded async in <head>) reads the live values through this ref.
+      // Guide tour — the shared engine (hv-tour.js shipped by hv-shared/kit, loaded async in <head>) reads the live values through this ref.
       // Optional: if the script never loads, nothing here changes how the app works. Started on the script's load event,
       // with a 1-second poll as a fallback that gives up after about 60 seconds.
       const tourRef = useRef({}); const phoneNavRef = useRef(null);

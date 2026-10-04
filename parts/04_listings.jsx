@@ -44,9 +44,9 @@
       );
     };
 
-    const ListingForm = ({ listing, prefill, onClose, onSaved }) => {      // prefill: a listing born from a photography request
+    const ListingForm = ({ listing, prefill, offline: offlineNew, onClose, onSaved }) => {      // prefill: a listing born from a photography request
       const { me, cfg, data, save, reloadWhere, toast } = useApp();
-      const isEdit = !!listing;
+      const isEdit = !!listing; const offline = isEdit ? !!listing.is_offline : !!offlineNew;
       const [f, setF] = useState(() => {
         const base = { facilities: [], currency: null, date_received: new Date().toISOString(), source_type: null, media_images_count: '', media_videos_count: '' };
         const src = listing ? { ...listing } : { ...base, ...(prefill || {}) };
@@ -63,7 +63,7 @@
       const hardMissing = ALWAYS_REQUIRED.filter((k) => !normalized[k] || (typeof normalized[k] === 'string' && !normalized[k].trim()));
       const bad = (k) => comp.missing.includes(k) || hardMissing.includes(k);
       const staff = data.profiles.filter((p) => p.is_active);
-      const dup = !isEdit && f.title && data.listings.find((l) => l.title && l.title.trim().toLowerCase() === f.title.trim().toLowerCase());
+      const dup = !isEdit && f.title && [...data.listings, ...data.offline].find((l) => l.title && l.title.trim().toLowerCase() === f.title.trim().toLowerCase());
 
       const control = (k) => {
         if (k === 'location') return <Select bad={bad(k)} value={f[k]} onChange={(v) => set(k, v)} options={Object.keys(cfg.location_codes || {}).sort()} disabled={isEdit} />;
@@ -93,16 +93,17 @@
         if (!isEdit && prefill && prefill.photo_request_id) { payload.photo_request_id = prefill.photo_request_id; if (prefill.photos_approved) payload.media_uploaded = true; }   // the manager's approval travels with it
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
+        if (offline) { delete payload.assigned_to; if (!isEdit) { payload.is_offline = true; payload.assigned_to = me.id; } }     // no uploader: it never goes on the website
         const row = await save('listings', payload, isEdit ? listing.id : null);
         setBusy(false);
         if (!row) return;
-        if (!isEdit) await reloadWhere('listing_channels', 'listing_id', row.id);   // created by the database trigger
+        if (!isEdit && !offline) await reloadWhere('listing_channels', 'listing_id', row.id);   // created by the database trigger
         toast(isEdit ? 'Listing saved' : `Created ${row.reference_code}`);
         onSaved(row);
       };
 
       return (
-        <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : prefill ? 'New listing — from the photography list' : 'New listing'} onClose={onClose} footer={<>
+        <Modal wide title={isEdit ? `Edit ${listing.reference_code}` : offline ? 'New offline property' : prefill ? 'New listing — from the photography list' : 'New listing'} onClose={onClose} footer={<>
           <span className="mr-auto self-center text-xs text-slate-500">{comp.missing.length ? 'You can save a draft now — it stays red until complete.' : 'All required fields filled.'}</span>
           <Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn data-tour="form-save" onClick={submit} disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save' : 'Save & generate code'}</Btn></>}>
           <div data-tour="form-completeness" className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 border-b border-slate-200 bg-white px-4 py-3">
@@ -112,6 +113,7 @@
             </div>
             <Meter value={comp.pct} />
           </div>
+          {offline && !isEdit && <div className="mb-3 rounded-lg border border-slate-300 bg-slate-50 p-2 text-sm text-slate-700">Offline property — it is kept and marketed by the team but never uploaded to the website. It gets its own code (OFF-…) with a separate serial.</div>}
           {dup && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Possible duplicate: {dup.reference_code} has the same title.</div>}
           {isEdit && <p className="mb-3 text-xs text-slate-500">Location, type and sale/rent are part of the reference code and cannot change after creation.</p>}
           {FORM_GROUPS.map(([g, keys]) => (
@@ -119,7 +121,7 @@
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.filter((k) => !(offline && k === 'assigned_to')).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -127,8 +129,9 @@
       );
     };
 
-    const ListingsPage = () => {
+    const ListingsPage = ({ offline }) => {      // offline: the same page over the properties that never go on the website
       const { me, data, cfg, now, go, nameOf, toast } = useApp();
+      const all = offline ? data.offline : data.listings; const bkt = offline ? offBucket : bucketOf; const pubView = view0 => view0 === 'published' && !offline;
       const [q, setQ] = useState(''); const [flt, setFlt] = useState({ status: null, sla: null, location: null, source: null, by: null, comp: null, from: '', to: '' });
       const [showFilters, setShowFilters] = useState(false); const [form, setForm] = useState(false); const [imp, setImp] = useState(false); const [basicImp, setBasicImp] = useState(false);
       const [view, setView] = useState('work');      // work | published | closed
@@ -136,8 +139,8 @@
       useTourAction({ 'open-new-listing': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
       const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
-        return data.listings.map((l) => ({ l, s: slaOf(l, cfg.sla_hours, now) })).filter(({ l, s: sl }) => {
-          if (bucketOf(l.status) !== view) return false;
+        return all.map((l) => ({ l, s: offline ? NO_SLA : slaOf(l, cfg.sla_hours, now) })).filter(({ l, s: sl }) => {
+          if (bkt(l.status) !== view) return false;
           if (flt.status && l.status !== flt.status) return false;
           if (flt.sla && (sl.state !== flt.sla || sl.verified)) return false;
           if (flt.location && l.location !== flt.location) return false;
@@ -149,31 +152,31 @@
           if (flt.to && new Date(l.date_received) >= addDays(new Date(flt.to), 1)) return false;
           if (s && !(`${l.reference_code} ${l.title || ''} ${l.source_name || ''} ${l.owner_name || ''} ${l.owner_phone || ''}`.toLowerCase().includes(s))) return false;
           return true;
-        }).sort((a, b) => view === 'published' ? new Date(publishedAt(b.l) || 0) - new Date(publishedAt(a.l) || 0) : new Date(b.l.date_received) - new Date(a.l.date_received));
-      }, [data.listings, q, flt, view, cfg.sla_hours, now]);
+        }).sort((a, b) => pubView(view) ? new Date(publishedAt(b.l) || 0) - new Date(publishedAt(a.l) || 0) : new Date(b.l.date_received) - new Date(a.l.date_received));
+      }, [all, q, flt, view, cfg.sla_hours, now]);
       const activeFilters = Object.values(flt).filter(Boolean).length;
-      const exportCsv = () => downloadCSV(`hv-listings-${ymd(new Date())}.csv`,
+      const exportCsv = () => downloadCSV(`hv-${offline ? 'offline' : 'listings'}-${ymd(new Date())}.csv`,
         ['reference_code', 'title', 'owner_name', 'owner_phone', 'status', 'location', 'property_type', 'deal_type', 'price', 'currency', 'completeness_pct', 'missing_fields', 'date_received', 'date_published_claimed', 'date_published_verified', 'hours', 'sla_state', 'source_type', 'source_name', 'entered_by', 'website_url'],
         rows.map(({ l, s }) => [l.reference_code, l.title, l.owner_name, l.owner_phone, l.status, l.location, l.property_type, l.deal_type, l.price, l.currency, l.completeness_pct, l.missing_fields, l.date_received, l.date_published_claimed, l.date_published_verified, r1(s.hours), s.state, l.source_type, l.source_name, nameOf(l.entered_by), l.website_url]));
 
       return (
         <div>
-          <PageHeader title="Listings" sub={`${rows.length} shown`}>
+          <PageHeader title={offline ? 'Offline properties' : 'Listings'} sub={offline ? `${rows.length} shown · never listed on the website · codes start with OFF-` : `${rows.length} shown`}>
             <Btn kind="ghost" onClick={exportCsv}>Export CSV</Btn>
             <Btn kind="ghost" onClick={() => exportBasicInfo(rows.map((x) => x.l), cfg, toast)}>Export Basic Info (.xlsx)</Btn>
-            <Btn kind="soft" data-tour="listing-io" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>
-            <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>
-            <Btn data-tour="new-listing" onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />New listing</Btn>
+            {!offline && <Btn kind="soft" data-tour="listing-io" onClick={() => setBasicImp(true)}><Icon name="upload" className="h-4 w-4" />Import Basic Info</Btn>}
+            {!offline && <Btn kind="ghost" onClick={() => setImp(true)}><Icon name="upload" className="h-4 w-4" />Import CSV</Btn>}
+            <Btn data-tour={offline ? 'new-offline' : 'new-listing'} onClick={() => setForm(true)}><Icon name="plus" className="h-4 w-4" />{offline ? 'New offline property' : 'New listing'}</Btn>
           </PageHeader>
-          <div data-tour="listing-tabs"><Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={bucketTabs(data.listings)} /></div>
+          <div data-tour={offline ? 'offline-tabs' : 'listing-tabs'}><Tabs value={view} onChange={(v) => { setView(v); setFilter('status', null); }} tabs={offline ? [['work', `In progress (${all.filter((r) => bkt(r.status) === 'work').length})`], ['published', `Ready (${all.filter((r) => bkt(r.status) === 'published').length})`], ['closed', `Rejected / archived (${all.filter((r) => bkt(r.status) === 'closed').length})`]] : bucketTabs(data.listings)} /></div>
           <div data-tour="listing-search" className="no-print mb-3 flex gap-2">
             <input className={inputCls()} placeholder="Search ref code, owner, title or source…" value={q} onChange={(e) => setQ(e.target.value)} />
             <Btn kind={activeFilters ? 'soft' : 'ghost'} onClick={() => setShowFilters(!showFilters)}>Filters{activeFilters ? ` (${activeFilters})` : ''}</Btn>
           </div>
           {showFilters && (
             <Card className="no-print mb-3 grid grid-cols-2 gap-3 p-3 sm:grid-cols-4">
-              <Field label="Status"><Select value={flt.status} onChange={(v) => setFilter('status', v)} options={BUCKETS[view].map((k) => [k, LISTING_STATUS[k][0]])} placeholder="All in this tab" /></Field>
-              <Field label="SLA state (open)"><Select value={flt.sla} onChange={(v) => setFilter('sla', v)} options={[['green', 'On track'], ['yellow', 'At risk'], ['red', 'Breached']]} placeholder="All" /></Field>
+              <Field label="Status"><Select value={flt.status} onChange={(v) => setFilter('status', v)} options={(offline ? { work: ['draft', 'on_hold'], published: ['ready_to_publish'], closed: BUCKETS.closed } : BUCKETS)[view].map((k) => [k, offline && k === 'ready_to_publish' ? 'Ready — offline' : LISTING_STATUS[k][0]])} placeholder="All in this tab" /></Field>
+              {!offline && <Field label="SLA state (open)"><Select value={flt.sla} onChange={(v) => setFilter('sla', v)} options={[['green', 'On track'], ['yellow', 'At risk'], ['red', 'Breached']]} placeholder="All" /></Field>}
               <Field label="Location"><Select value={flt.location} onChange={(v) => setFilter('location', v)} options={Object.keys(cfg.location_codes || {}).sort()} placeholder="All" /></Field>
               <Field label="Source"><Select value={flt.source} onChange={(v) => setFilter('source', v)} options={SOURCE_TYPES.map((s) => [s, titleCase(s)])} placeholder="All" /></Field>
               <Field label="Entered by"><Select value={flt.by} onChange={(v) => setFilter('by', v)} options={data.profiles.map((p) => [p.id, p.full_name || p.email])} placeholder="Anyone" /></Field>
@@ -182,7 +185,7 @@
               <Field label="Received to"><input type="date" className={inputCls()} value={flt.to} onChange={(e) => setFilter('to', e.target.value)} /></Field>
             </Card>
           )}
-          {!rows.length ? <Empty>{view === 'published' ? 'Nothing published yet. A listing moves here as soon as it is marked as published.' : view === 'closed' ? 'No rejected or archived listings.' : 'Nothing in progress. Create a listing with “New listing”.'}</Empty> : (
+          {!rows.length ? <Empty>{offline ? (view === 'published' ? 'No offline property is ready yet. It moves here when it is complete and marked ready.' : view === 'closed' ? 'No rejected or archived offline properties.' : 'No offline properties in progress. Add one with “New offline property”.') : view === 'published' ? 'Nothing published yet. A listing moves here as soon as it is marked as published.' : view === 'closed' ? 'No rejected or archived listings.' : 'Nothing in progress. Create a listing with “New listing”.'}</Empty> : (
             <>
               {/* phone: cards */}
               <div data-tour="listing-list" className="space-y-2 md:hidden">
@@ -190,15 +193,15 @@
                   <Card key={l.id} className={`cursor-pointer border-l-4 p-3 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`} onClick={() => go('listing', l.id)}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0"><div className="font-mono text-sm font-bold text-slate-900">{l.reference_code}</div><div className="truncate text-sm text-slate-600">{l.title || `${l.property_type} · ${l.location}`}</div></div>
-                      <SlaChip listing={l} />
+                      {!offline && <SlaChip listing={l} />}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <StatusBadge status={l.status} />
+                      <StatusBadge status={l.status} offline={offline} />
                       {l.completeness_pct < 100 && <Badge className="bg-rose-600 text-white">{l.completeness_pct}% · {(l.missing_fields || []).length} missing</Badge>}
                       {s.claimedNotFound && <Badge className="bg-rose-600 text-white">Claimed, not found</Badge>}
-                      <span className="ml-auto text-xs text-slate-500">{view === 'published' ? `Published ${fmtDate(publishedAt(l))}` : fmtDate(l.date_received)}</span>
+                      <span className="ml-auto text-xs text-slate-500">{pubView(view) ? `Published ${fmtDate(publishedAt(l))}` : offline && view === 'published' && l.date_ready ? `Ready ${fmtDate(l.date_ready)}` : fmtDate(l.date_received)}</span>
                     </div>
-                    {view === 'published' && <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-xs text-slate-600"><span>Uploaded by <b className="text-slate-900">{nameOf(l.published_claimed_by || l.assigned_to)}</b></span>{s.verified ? <span className={s.onTime ? 'text-emerald-700' : 'text-rose-700'}>live in {fmtHours(s.hours)}{s.onTime ? '' : ' — late'}</span> : <span className="text-amber-700">waiting for website check</span>}{l.website_url && <a className="text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open on website ↗</a>}</div>}
+                    {pubView(view) && <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-xs text-slate-600"><span>Uploaded by <b className="text-slate-900">{nameOf(l.published_claimed_by || l.assigned_to)}</b></span>{s.verified ? <span className={s.onTime ? 'text-emerald-700' : 'text-rose-700'}>live in {fmtHours(s.hours)}{s.onTime ? '' : ' — late'}</span> : <span className="text-amber-700">waiting for website check</span>}{l.website_url && <a className="text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open on website ↗</a>}</div>}
                     <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-slate-600"><span>Owner: <b className="text-slate-900">{l.owner_name || '—'}</b></span><span>Entered by <b className="text-slate-900">{nameOf(l.entered_by)}</b></span></div>
                   </Card>
                 ))}
@@ -206,20 +209,20 @@
               {/* desktop: table */}
               <Card data-tour="listing-list" className="scroll-x hidden md:block">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', 'SLA', 'Complete', 'Price', 'Source', view === 'published' ? 'Uploaded by' : 'Entered by', view === 'published' ? 'Published' : 'Received'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{['Ref code', 'Title', 'Owner', 'Status', offline ? null : 'SLA', 'Complete', 'Price', 'Source', pubView(view) ? 'Uploaded by' : 'Entered by', pubView(view) ? 'Published' : offline && view === 'published' ? 'Ready on' : 'Received'].filter(Boolean).map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
                   <tbody>
                     {rows.map(({ l, s }) => (
                       <tr key={l.id} onClick={() => go('listing', l.id)} className={`cursor-pointer border-l-4 border-t border-t-slate-100 hover:bg-slate-50 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
                         <td className="px-3 py-2 font-mono font-semibold">{l.reference_code}</td>
                         <td className="max-w-[16rem] truncate px-3 py-2">{l.title || `${l.property_type} · ${l.location}`}</td>
                         <td className="px-3 py-2"><div className="max-w-[10rem] truncate font-medium">{l.owner_name || '—'}</div>{l.owner_phone && <div className="text-xs text-slate-500">{l.owner_phone}</div>}</td>
-                        <td className="px-3 py-2"><StatusBadge status={l.status} />{s.claimedNotFound && <Badge className="ml-1 bg-rose-600 text-white">Not found</Badge>}</td>
-                        <td className="px-3 py-2"><SlaChip listing={l} /></td>
+                        <td className="px-3 py-2"><StatusBadge status={l.status} offline={offline} />{s.claimedNotFound && <Badge className="ml-1 bg-rose-600 text-white">Not found</Badge>}</td>
+                        {!offline && <td className="px-3 py-2"><SlaChip listing={l} /></td>}
                         <td className="px-3 py-2">{l.completeness_pct < 100 ? <Badge className="bg-rose-600 text-white">{l.completeness_pct}%</Badge> : <Badge className="bg-emerald-100 text-emerald-800">100%</Badge>}</td>
                         <td className="num whitespace-nowrap px-3 py-2">{money(l.price, l.currency)}</td>
                         <td className="px-3 py-2"><div className="max-w-[10rem] truncate">{l.source_name}</div><div className="text-xs text-slate-500">{titleCase(l.source_type)}</div></td>
-                        <td className="px-3 py-2">{view === 'published' ? nameOf(l.published_claimed_by || l.assigned_to) : nameOf(l.entered_by)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{view === 'published' ? <>{fmtDateTime(publishedAt(l))}{l.website_url && <a className="ml-2 text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>site ↗</a>}</> : fmtDateTime(l.date_received)}</td>
+                        <td className="px-3 py-2">{pubView(view) ? nameOf(l.published_claimed_by || l.assigned_to) : nameOf(l.entered_by)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{offline && view === 'published' ? fmtDateTime(l.date_ready) : pubView(view) ? <>{fmtDateTime(publishedAt(l))}{l.website_url && <a className="ml-2 text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>site ↗</a>}</> : fmtDateTime(l.date_received)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -227,7 +230,7 @@
               </Card>
             </>
           )}
-          {form && <ListingForm onClose={() => setForm(false)} onSaved={(row) => { setForm(false); go('listing', row.id); }} />}
+          {form && <ListingForm offline={offline} onClose={() => setForm(false)} onSaved={(row) => { setForm(false); go('listing', row.id); }} />}
           {imp && <CsvImport onClose={() => setImp(false)} />}
           {basicImp && <BasicInfoImport onClose={() => setBasicImp(false)} />}
         </div>
@@ -236,7 +239,7 @@
 
     const ListingDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
-      const l = data.listings.find((x) => x.id === id);
+      const l = data.listings.find((x) => x.id === id) || data.offline.find((x) => x.id === id); const off = !!(l && l.is_offline);
       const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
       const channels = data.listing_channels.filter((c) => c.listing_id === id);
       const mgr = isMgr(me);
@@ -246,9 +249,9 @@
         sbc.from(tbl('audit_log')).select('*').in('record_id', ids).order('changed_at', { ascending: false }).limit(300).then(({ data: rows }) => setAudit(rows || []));
       }, [id, l && l.updated_at, channels.length]);
       if (!l) return <Empty>Listing not found.</Empty>;
-      const s = slaOf(l, cfg.sla_hours, now);
+      const s = off ? NO_SLA : slaOf(l, cfg.sla_hours, now);
       const canEdit = mgr || l.entered_by === me.id || l.assigned_to === me.id;
-      const setStatus = (status, extra = {}) => save('listings', { status, ...extra }, l.id).then((row) => { if (row) toast(`Status: ${LISTING_STATUS[status][0]}`); return row; });
+      const setStatus = (status, extra = {}) => save('listings', { status, ...extra }, l.id).then((row) => { if (row) toast(`Status: ${off && status === 'ready_to_publish' ? 'Ready — offline' : LISTING_STATUS[status][0]}`); return row; });
       const copy = async () => { try { await navigator.clipboard.writeText(l.reference_code); } catch (e) { const t = document.createElement('textarea'); t.value = l.reference_code; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } setCopied(true); setTimeout(() => setCopied(false), 1500); };
       const missingChannels = Object.keys(cfg.portal_labels || {}).filter((c) => !channels.some((x) => x.channel === c));
       const timeline = [
@@ -259,7 +262,7 @@
 
       return (
         <div>
-          <button className="no-print mb-3 inline-flex items-center gap-1 text-sm text-brand-700" onClick={() => go('listings')}><Icon name="back" className="h-4 w-4" />All listings</button>
+          <button className="no-print mb-3 inline-flex items-center gap-1 text-sm text-brand-700" onClick={() => go(off ? 'offline' : 'listings')}><Icon name="back" className="h-4 w-4" />{off ? 'All offline properties' : 'All listings'}</button>
           <Card className={`mb-4 border-l-4 p-4 ${SLA_STYLE[s.verified ? 'none' : s.state].bar}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -269,12 +272,12 @@
                   <Btn kind="soft" data-tour="ai-export" className="!px-2.5 !py-1.5" onClick={() => setAi(true)}><Icon name="spark" className="h-4 w-4" />Export for AI</Btn>
                   <Btn kind="ghost" className="!px-2.5 !py-1.5" onClick={() => exportBasicInfo([l], cfg, toast)}>Basic Info .xlsx</Btn>
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500">Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.</p>
+                <p className="mt-0.5 text-xs text-slate-500">{off ? 'Offline property — never uploaded to the website. Use this code in the intranet folder name and when talking to clients.' : 'Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.'}</p>
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>
                 <div className="mt-1 text-sm text-slate-700">Owner: <b>{l.owner_name || '—'}</b>{l.owner_phone ? <> · <a className="text-brand-700 underline" href={`tel:${l.owner_phone}`}>{l.owner_phone}</a></> : null}</div>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500"><span>Entered by <b className="text-slate-800">{nameOf(l.entered_by)}</b> · {fmtDateTime(l.created_at)}</span>{l.published_claimed_by && <span>Uploaded to website by <b className="text-slate-800">{nameOf(l.published_claimed_by)}</b> · {fmtDateTime(l.date_published_claimed)}</span>}{l.media_approved_by && <span>Photos approved by <b className="text-slate-800">{nameOf(l.media_approved_by)}</b> · {fmtDateTime(l.media_approved_at)}</span>}</div>
               </div>
-              <div className="flex flex-col items-end gap-1.5"><StatusBadge status={l.status} /><SlaChip listing={l} /></div>
+              <div className="flex flex-col items-end gap-1.5">{off && <Badge className="bg-slate-800 text-white">Offline</Badge>}<StatusBadge status={l.status} offline={off} />{!off && <SlaChip listing={l} />}</div>
             </div>
             {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(l.date_published_claimed)} but the verifier cannot find this File Ref on the website.</div>}
             {l.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {l.hold_reason}</div>}
@@ -287,8 +290,8 @@
             {canEdit && (
               <div data-tour="listing-actions" className="no-print mt-4 flex flex-wrap gap-2">
                 {!['archived'].includes(l.status) && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
-                {l.status === 'draft' && <Btn disabled={l.completeness_pct < 100} title={l.completeness_pct < 100 ? 'Complete all required fields first' : ''} onClick={() => setStatus('ready_to_publish')}>Ready to publish</Btn>}
-                {l.status === 'ready_to_publish' && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
+                {l.status === 'draft' && <Btn disabled={l.completeness_pct < 100} title={l.completeness_pct < 100 ? 'Complete all required fields first' : ''} onClick={() => setStatus('ready_to_publish')}>{off ? 'Mark as ready' : 'Ready to publish'}</Btn>}
+                {l.status === 'ready_to_publish' && !off && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
                 {l.status === 'ready_to_publish' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Back to draft</Btn>}
                 {['draft', 'ready_to_publish', 'published_claimed'].includes(l.status) && <Btn kind="ghost" onClick={() => setReason('hold')}>Put on hold</Btn>}
                 {l.status === 'on_hold' && <Btn onClick={() => setStatus(l.status_before_hold || 'draft')}>Resume (restart clock)</Btn>}
@@ -322,7 +325,7 @@
               ))}
             </div>
             <div className="space-y-4">
-              <Card data-tour="listing-channels" className="p-4">
+              {!off && <Card data-tour="listing-channels" className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-brand-800">Publishing channels</h3>
                 <div className="space-y-3">
                   {channels.map((c) => <ChannelRow key={c.id} c={c} canEdit={canEdit} />)}
@@ -331,13 +334,13 @@
                   )}
                 </div>
                 {l.website_url && <a className="mt-3 inline-flex items-center gap-1 text-sm text-brand-700 underline" href={l.website_url} target="_blank" rel="noreferrer"><Icon name="link" className="h-4 w-4" />View on website</a>}
-              </Card>
+              </Card>}
               <Card data-tour="sla-timeline" className="p-4">
-                <h3 className="mb-3 text-sm font-semibold text-brand-800">SLA timeline</h3>
+                <h3 className="mb-3 text-sm font-semibold text-brand-800">{off ? 'Timeline' : 'SLA timeline'}</h3>
                 <ol className="space-y-2 border-l-2 border-slate-200 pl-3 text-sm">
-                  {timeline.map(([label, at]) => <li key={label}><div className={at ? 'text-slate-900' : 'text-slate-400'}>{label}</div><div className="text-xs text-slate-500">{at ? fmtDateTime(at) : 'pending'}</div></li>)}
+                  {(off ? [['Info received', l.date_received], ['Record created in HV Ops', l.created_at], ['Complete — marked ready', l.date_ready]] : timeline).map(([label, at]) => <li key={label}><div className={at ? 'text-slate-900' : 'text-slate-400'}>{label}</div><div className="text-xs text-slate-500">{at ? fmtDateTime(at) : 'pending'}</div></li>)}
                 </ol>
-                <div className="mt-3 text-sm">{s.verified ? <>Hours to publish: <b className="num">{r1(s.hours)}</b> — {s.onTime ? <span className="text-emerald-700">within {s.breach}h</span> : <span className="text-rose-700">late</span>}</> : <>Elapsed: <b className="num">{fmtHours(s.hours)}</b> of {s.breach}h</>}</div>
+                <div className={off ? 'hidden' : 'mt-3 text-sm'}>{s.verified ? <>Hours to publish: <b className="num">{r1(s.hours)}</b> — {s.onTime ? <span className="text-emerald-700">within {s.breach}h</span> : <span className="text-rose-700">late</span>}</> : <>Elapsed: <b className="num">{fmtHours(s.hours)}</b> of {s.breach}h</>}</div>
                 <div className="mt-1 text-xs text-slate-500">Entered by {nameOf(l.entered_by)}</div>
               </Card>
               {mgr && (

@@ -30,6 +30,7 @@
       ['listings', 'Listings', 'الوحدات (Listings)'],
       ['entry', 'New listing & reference codes', 'إدخال وحدة جديدة وكود المرجع'],
       ['lifecycle', 'Listing lifecycle & the 72h SLA', 'مراحل الوحدة ومهلة الـ 72 ساعة'],
+      ['offline', 'Offline properties', 'العقارات غير المعروضة أونلاين (Offline)'],
       ['projects', 'Projects', 'المشروعات (Projects)'],
       ['photo', 'Needs photography', 'طلبات التصوير'],
       ['tasks', 'Tasks & alerts', 'المهام والتنبيهات'],
@@ -108,6 +109,14 @@
       { c: 'lifecycle', page: 'listings', action: 'open-first-listing', target: 'ai-export',
         en: ['Export for AI', 'Builds a ready brief to paste into ChatGPT, Claude or any AI tool so it writes the website description, in the language you pick. The owner’s name and phone, the source and staff names are never included. “Basic Info .xlsx” exports this listing in the office sheet layout.'],
         ar: ['التصدير للذكاء الاصطناعي', 'يجهّز نصاً كاملاً تلصقه في ChatGPT أو Claude أو أي أداة ليكتب وصف الموقع باللغة التي تختارها. اسم المالك ورقمه والمصدر وأسماء الموظفين لا تُضمَّن أبداً. زر «Basic Info .xlsx» يصدّر الوحدة بشكل ملف المكتب.'] },
+
+      // ---------------------------------------------------------------- Offline properties
+      { c: 'offline', page: 'offline', target: 'offline-tabs',
+        en: ['Offline properties', 'Properties the company keeps and markets privately — they are never uploaded to home-vacation.com. They live on their own page, away from the website pipeline: no upload stage, no website check and no 72-hour clock. “In progress” holds what still misses information; “Ready” holds the complete ones.'],
+        ar: ['العقارات غير المعروضة أونلاين', 'عقارات تحتفظ بها الشركة وتسوّقها بشكل خاص — لا تُرفع أبداً على موقع home-vacation.com. لها صفحة مستقلة بعيداً عن مسار الموقع: لا مرحلة رفع، ولا تحقق من الموقع، ولا مهلة 72 ساعة. تبويب «In progress» لما ينقصه بيانات، و«Ready» للمكتمل.'] },
+      { c: 'offline', page: 'offline', target: 'new-offline',
+        en: ['Adding one, and its code', '“New offline property” opens the same form as a listing. On saving it gets its own code — OFF-AH-A-0001-R: OFF, then the location and unit type letters, a separate serial that starts at 0001, and S for sale or R for rent. These numbers never mix with the website serial. When everything is filled, press “Mark as ready”.'],
+        ar: ['إضافة عقار وكوده', 'زر «New offline property» يفتح نفس نموذج الوحدة. عند الحفظ يأخذ العقار كوداً خاصاً — OFF-AH-A-0001-R: كلمة OFF ثم حروف المنطقة ونوع الوحدة، ثم مسلسل مستقل يبدأ من 0001، ثم S للبيع أو R للإيجار. هذه الأرقام لا تختلط بمسلسل الموقع. بعد اكتمال البيانات اضغط «Mark as ready».'] },
 
       // ---------------------------------------------------------------- Projects
       { c: 'projects', page: 'projects', target: 'new-project',

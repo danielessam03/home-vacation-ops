@@ -309,7 +309,7 @@
     }
 
     const NAV = [
-      ['dashboard', 'Home', 'home', () => true], ['listings', 'Listings', 'list', () => true], ['tasks', 'Tasks', 'tasks', () => true], ['alerts', 'Alerts', 'bell', () => true],
+      ['dashboard', 'Home', 'home', () => true], ['listings', 'Listings', 'list', () => true], ['offline', 'Offline', 'offline', () => true], ['tasks', 'Tasks', 'tasks', () => true], ['alerts', 'Alerts', 'bell', () => true],
       ['projects', 'Projects', 'project', () => true], ['photo', 'Needs photography', 'camera', () => true],
       ['agencies', 'Agencies', 'agency', (me) => me.role !== 'data_entry'], ['kpis', 'KPIs', 'chart', () => true], ['reports', 'Reports', 'report', (me) => isMgr(me)], ['settings', 'Settings', 'cog', (me) => me.role === 'admin'],
     ];
@@ -317,7 +317,9 @@
     const App = () => {
       const [connected, setConnected] = useState(() => initSupabase());
       const [session, setSession] = useState(undefined); const [me, setMe] = useState(null); const [notice, setNotice] = useState('');
-      const [data, setData] = useState(EMPTY); const [loading, setLoading] = useState(false); const [loadError, setLoadError] = useState('');
+      const [rawData, setData] = useState(EMPTY);
+      // offline properties live in the same table but are a separate world: every page built on data.listings never sees them
+      const data = useMemo(() => ({ ...rawData, listings: rawData.listings.filter((l) => !l.is_offline), offline: rawData.listings.filter((l) => l.is_offline) }), [rawData]); const [loading, setLoading] = useState(false); const [loadError, setLoadError] = useState('');
       const [route, setRoute] = useState({ page: 'dashboard', id: null }); const [toasts, setToasts] = useState([]); const [now, setNow] = useState(Date.now()); const [more, setMore] = useState(false);
       const sessionRef = useRef(null); sessionRef.current = session;
       // only the Home Vacation systems ticked for this account in HR are offered in the switcher
@@ -450,7 +452,7 @@
       tourRef.current.page = page;
       const ctx = { me, data, setData, cfg, now, toast, go, save, saveSetting, reloadTable, reloadWhere, workerCall, nameOf };
       const navBtn = (n, mobile) => {
-        const active = page === n[0] || (n[0] === 'listings' && page === 'listing') || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : n[0] === 'photo' ? data.photo_requests.filter((r) => isMgr(me) ? ['requested', 'shot'].includes(r.status) : (r.assigned_to === me.id && ['requested', 'scheduled'].includes(r.status))).length : 0;
+        const offOpen = page === 'listing' && data.offline.some((x) => x.id === route.id); const active = page === n[0] || (n[0] === 'listings' && page === 'listing' && !offOpen) || (n[0] === 'offline' && offOpen) || (n[0] === 'projects' && page === 'project'); const count = n[0] === 'alerts' ? unread.length : n[0] === 'photo' ? data.photo_requests.filter((r) => isMgr(me) ? ['requested', 'shot'].includes(r.status) : (r.assigned_to === me.id && ['requested', 'scheduled'].includes(r.status))).length : 0;
         return mobile ? (
           <button key={n[0]} data-tour-nav={n[0]} data-tour-label={n[1]} onClick={() => go(n[0])} className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${active ? 'text-brand-700' : 'text-slate-500'}`}><Icon name={n[2]} />{n[1]}{count > 0 && <span className="absolute right-1/4 top-1 rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">{count}</span>}</button>
         ) : (
@@ -480,6 +482,7 @@
                 )}
                 {page === 'dashboard' && <Dashboard />}
                 {page === 'listings' && <ListingsPage />}
+                {page === 'offline' && <ListingsPage key="offline" offline />}
                 {page === 'listing' && <ListingDetail key={route.id} id={route.id} />}
                 {page === 'projects' && <ProjectsPage />}
                 {page === 'photo' && <PhotoRequestsPage />}

@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -262,5 +262,22 @@ await db.exec(`update ops_tasks set status='doing', rejection_reason='redo' wher
 r = await db.query(`select status from kpi_entries where external_id like 'ops:task:%'`); ok('reopened task => HR entry rejected', r.rows[0].status === 'rejected');
 await db.exec(`update ops_tasks set status='done' where title='Do it'`);
 r = await db.query(`select count(*)::int n, min(status) s from kpi_entries where external_id like 'ops:task:%'`); ok('re-approved task => same entry approved again (no duplicate)', r.rows[0].n === 1 && r.rows[0].s === 'approved');
+
+// OFFLINE properties (sql/016): own code + serial, no channels, never published, outside the SLA view
+await asUser(A);
+r = await db.query(`select coalesce(max((regexp_match(reference_code, '-(\\d+)-[SR]$'))[1]::bigint), 0) n from ops_listings where not is_offline`); const lastOnline = Number(r.rows[0].n);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,assigned_to,is_offline) values ('Hadaba','Villa','rent','owner','x','${A}','${D2}',true) returning id, reference_code, assigned_to`);
+const OFF1 = r.rows[0].id;
+ok('offline code: OFF-HD-V-0001-R', r.rows[0].reference_code === 'OFF-HD-V-0001-R', r.rows[0].reference_code);
+ok('offline: no uploader (assigned to whoever entered it)', r.rows[0].assigned_to === A);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,is_offline) values ('Magawish','Apartment','sale','owner','x','${A}',true) returning reference_code`);
+ok('offline serial runs on its own: 0002', r.rows[0].reference_code === 'OFF-MG-A-0002-S', r.rows[0].reference_code);
+r = await db.query(`select count(*)::int n from ops_listing_channels where listing_id='${OFF1}'`); ok('offline: no publishing channels', r.rows[0].n === 0);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by) values ('Hadaba','Villa','sale','owner','x','${A}') returning reference_code`);
+ok('online serial ignores offline codes', r.rows[0].reference_code === 'HD-V-' + (lastOnline + 1) + '-S', r.rows[0].reference_code);
+r = await db.query(`select count(*)::int n from ops_vw_listing_sla where is_offline`); ok('SLA view leaves offline out', r.rows[0].n === 0);
+await expectErr('offline can never be marked published', `update ops_listings set status='published_claimed' where id='${OFF1}'`, /never published/);
+await expectErr('cannot move between offline and listings', `update ops_listings set is_offline=false where id='${OFF1}'`, /cannot be moved/);
+await asService();
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

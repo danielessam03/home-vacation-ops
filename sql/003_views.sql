@@ -21,6 +21,7 @@ base as (
                     then extract(epoch from (now() - l.hold_started_at)) else 0 end
          ) / 3600.0 as hours_elapsed
   from ops_listings l
+  where not l.is_offline            -- offline properties have no website stage and no SLA (sql/016)
 )
 select b.*,
        case when b.date_published_verified is not null then round(b.hours_elapsed::numeric, 2) end as hours_to_publish,

@@ -182,6 +182,7 @@
       const { cfg, data, saveSetting } = useApp();
       const [tab, setTab] = useState('users');
       useTourAction(Object.fromEntries(['users', 'loc', 'types', 'req', 'sla', 'portals', 'lists', 'metrics', 'agencies', 'verifier'].map((k) => [`settings-tab-${k}`, () => setTab(k)])));
+      const [oreq, setOreq] = useState(cfg.offline_required_fields || cfg.required_fields || []);
       const [preq, setPreq] = useState(cfg.project_required_fields || []); const [psla, setPsla] = useState(cfg.project_sla_hours || {});
       const [sla, setSla] = useState(cfg.sla_hours || {}); const [req, setReq] = useState(cfg.required_fields || []); const [chans, setChans] = useState(cfg.default_channels || []); const [labels, setLabels] = useState(cfg.portal_labels || {});
       const candidates = Object.keys(FIELD_LABEL).filter((k) => !['date_received', 'source_type', 'source_name', 'assigned_to'].includes(k));
@@ -198,6 +199,10 @@
               <p className="mb-3 text-sm text-slate-500">Ticked fields count toward 100% completeness ({req.length} selected). A listing cannot move to Ready to publish until all are filled. Existing listings are re-scored the next time they are saved.</p>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">{candidates.map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={req.includes(k)} onChange={() => setReq(req.includes(k) ? req.filter((x) => x !== k) : [...req, k])} />{FIELD_LABEL[k]}</label>)}</div>
               <div className="mt-3"><Btn onClick={() => saveSetting('required_fields', req)}>Save</Btn></div>
+              <h3 className="mt-6 border-t border-slate-200 pt-4 text-sm font-semibold text-brand-800">Offline properties — required fields ({oreq.length} selected)</h3>
+              <p className="mt-1 text-sm text-slate-500">Used only on the Offline page. An offline property cannot be marked ready until all of these are filled.</p>
+              <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">{candidates.map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={oreq.includes(k)} onChange={() => setOreq(oreq.includes(k) ? oreq.filter((x) => x !== k) : [...oreq, k])} />{FIELD_LABEL[k]}</label>)}</div>
+              <div className="mt-3 flex flex-wrap gap-2"><Btn onClick={() => saveSetting('offline_required_fields', oreq)}>Save offline fields</Btn><Btn kind="ghost" onClick={() => setOreq(req)}>Copy from listings</Btn></div>
               <h3 className="mt-6 border-t border-slate-200 pt-4 text-sm font-semibold text-brand-800">Projects — required fields ({preq.length} selected)</h3>
               <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">{Object.keys(PROJECT_LABEL).filter((k) => !['date_received', 'assigned_to'].includes(k)).map((k) => <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={preq.includes(k)} onChange={() => setPreq(preq.includes(k) ? preq.filter((x) => x !== k) : [...preq, k])} />{PROJECT_LABEL[k]}</label>)}</div>
               <div className="mt-3"><Btn onClick={() => saveSetting('project_required_fields', preq)}>Save project fields</Btn></div>

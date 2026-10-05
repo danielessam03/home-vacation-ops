@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -301,4 +301,11 @@ await db.exec(`update ops_listings set photography_done=true where id='${r.rows[
 r = await db.query(`select status from ops_photo_requests where listing_id='${r.rows[0].id}'`); ok('answer changed to Yes => untouched request cancelled', r.rows[0].status === 'cancelled');
 await asService();
 
+// offline required fields (sql/018): own list, listings untouched
+await asService(); await db.exec(`update ops_settings set value='["owner_name"]'::jsonb where key='offline_required_fields'`); await asUser(A);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,owner_name,entered_by,is_offline) values ('Hadaba','Villa','sale','owner','x','Mr Off','${A}',true) returning completeness_pct`);
+ok('offline listing scored by the offline list', r.rows[0].completeness_pct === 100, String(r.rows[0].completeness_pct));
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,owner_name,entered_by) values ('Hadaba','Villa','sale','owner','x','Mr On','${A}') returning completeness_pct`);
+ok('normal listing still scored by the listings list', r.rows[0].completeness_pct < 100, String(r.rows[0].completeness_pct));
+await asService();
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -241,7 +241,7 @@
     async function buildBasicBuffer(listings, cfg) {
       const ExcelJS = await loadExcelJS(); const wb = new ExcelJS.Workbook(); wb.creator = 'HV Ops';
       const used = new Set();
-      listings.forEach((l) => { let name = (l.reference_code || 'Listing').replace(/[\\/?*[\]:]/g, '').slice(0, 31); let n = 2; while (used.has(name)) name = `${name.slice(0, 28)}-${n++}`; used.add(name); addBasicSheet(wb, l, cfg.required_fields || [], listings.length === 1 ? 'Sheet1' : name); });
+      listings.forEach((l) => { let name = (l.reference_code || 'Listing').replace(/[\\/?*[\]:]/g, '').slice(0, 31); let n = 2; while (used.has(name)) name = `${name.slice(0, 28)}-${n++}`; used.add(name); addBasicSheet(wb, l, reqFor(cfg, l.is_offline), listings.length === 1 ? 'Sheet1' : name); });
       return wb.xlsx.writeBuffer();
     }
     async function exportBasicInfo(listings, cfg, toast) {

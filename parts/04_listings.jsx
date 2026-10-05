@@ -61,7 +61,7 @@
       const [busy, setBusy] = useState(false);
       const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const normalized = useMemo(() => { const o = { ...f }; NUM_FIELDS.forEach((k) => { o[k] = f[k] === '' || f[k] == null ? null : Number(f[k]); }); return o; }, [f]);
-      const comp = calcCompleteness(normalized, cfg.required_fields);
+      const comp = calcCompleteness(normalized, reqFor(cfg, offline));
       const hardMissing = ALWAYS_REQUIRED.filter((k) => !normalized[k] || (typeof normalized[k] === 'string' && !normalized[k].trim()));
       const bad = (k) => comp.missing.includes(k) || hardMissing.includes(k);
       const staff = data.profiles.filter((p) => p.is_active);

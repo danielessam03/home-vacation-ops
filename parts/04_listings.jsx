@@ -16,14 +16,15 @@
     const FORM_GROUPS = [
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
       ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
-      ['Media', ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
+      ['Media', ['photography_done', 'media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'price_note', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const FORM_TOUR = { Basics: 'form-basics', Specs: 'form-specs', Media: 'form-media', Commercial: 'form-commercial', Marketing: 'form-marketing', 'Owner & source': 'form-owner' };   // guide-tour anchors
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
-    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'photography_done', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const MEDIA_DETAIL = ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs'];      // asked only once photography is done
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
 
     const FacilitiesInput = ({ value, onChange, options, bad }) => {
@@ -45,7 +46,7 @@
     };
 
     const ListingForm = ({ listing, prefill, offline: offlineNew, onClose, onSaved }) => {      // prefill: a listing born from a photography request
-      const { me, cfg, data, save, reloadWhere, toast } = useApp();
+      const { me, cfg, data, save, reloadWhere, reloadTable, toast } = useApp();
       const isEdit = !!listing; const offline = isEdit ? !!listing.is_offline : !!offlineNew;
       const [f, setF] = useState(() => {
         const base = { facilities: [], currency: null, date_received: new Date().toISOString(), source_type: null, media_images_count: '', media_videos_count: '' };
@@ -54,6 +55,7 @@
         if (listing && listing.media_images_count === 0) src.media_images_count = '0';
         if (listing && listing.media_videos_count === 0) src.media_videos_count = '0';
         src.facilities = src.facilities || [];
+        if (src.photography_done == null && (prefill ? prefill.photo_request_id : MEDIA_DETAIL.some((k) => src[k] != null))) src.photography_done = true;   // photos clearly exist already
         return src;
       });
       const [busy, setBusy] = useState(false);
@@ -90,6 +92,7 @@
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
+        if (payload.photography_done !== true) MEDIA_DETAIL.forEach((k) => delete payload[k]);      // hidden questions are left exactly as they were
         if (!isEdit && prefill && prefill.photo_request_id) { payload.photo_request_id = prefill.photo_request_id; if (prefill.photos_approved) payload.media_uploaded = true; }   // the manager's approval travels with it
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
@@ -98,7 +101,9 @@
         setBusy(false);
         if (!row) return;
         if (!isEdit && !offline) await reloadWhere('listing_channels', 'listing_id', row.id);   // created by the database trigger
-        toast(isEdit ? 'Listing saved' : `Created ${row.reference_code}`);
+        const toPhoto = row.photography_done === false && !(listing && listing.photography_done === false);
+        if (toPhoto || (isEdit && row.photography_done !== listing.photography_done)) await reloadTable('photo_requests');     // the database adds / closes the photography request
+        toast(toPhoto ? `${isEdit ? 'Saved' : `Created ${row.reference_code}`} — added to Needs photography` : isEdit ? 'Listing saved' : `Created ${row.reference_code}`);
         onSaved(row);
       };
 
@@ -120,8 +125,9 @@
             <fieldset key={g} data-tour={FORM_TOUR[g]} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
+              {g === 'Media' && f.photography_done === false && <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Not photographed yet — when you save, this {offline ? 'property' : 'listing'} is added to <b>Needs photography</b> automatically. The photo questions open here once the shoot is approved.</div>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.filter((k) => !(offline && k === 'assigned_to')).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.filter((k) => !(offline && k === 'assigned_to') && !(MEDIA_DETAIL.includes(k) && f.photography_done !== true)).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -280,6 +286,7 @@
               <div className="flex flex-col items-end gap-1.5">{off && <Badge className="bg-slate-800 text-white">Offline</Badge>}<StatusBadge status={l.status} offline={off} />{!off && <SlaChip listing={l} />}</div>
             </div>
             {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(l.date_published_claimed)} but the verifier cannot find this File Ref on the website.</div>}
+            {(() => { const pr = data.photo_requests.find((x) => x.listing_id === l.id && !['converted', 'cancelled'].includes(x.status)); return pr ? <button className="no-print mt-3 flex w-full items-center justify-between gap-2 rounded-lg bg-amber-100 p-2.5 text-left text-sm text-amber-900" onClick={() => go('photo')}><span>Waiting for photography — {photoNo(pr)} · {PHOTO_STATUS[pr.status][0]}{pr.assigned_to ? ` · ${nameOf(pr.assigned_to)}` : ''}</span><span className="whitespace-nowrap underline">Open the photography list</span></button> : null; })()}
             {l.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {l.hold_reason}</div>}
             {l.status === 'rejected' && <div className="mt-3 rounded-lg bg-rose-100 p-2.5 text-sm text-rose-900">Rejected: {l.rejection_reason}</div>}
             <div className="mt-3">

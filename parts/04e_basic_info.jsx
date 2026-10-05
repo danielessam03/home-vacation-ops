@@ -98,7 +98,7 @@
       o.is_exclusive = yesNo(raw.is_exclusive);
       o.cover_photo_belongs = yesNo(raw.cover_photo_belongs);
       const mediaDone = yesNo(raw.media_uploaded);
-      if (mediaDone) { if (canApprovePhotos) o.media_uploaded = true; else notes.push('Media says “Done” — a manager still has to mark the photos as ready'); }
+      if (mediaDone) { o.photography_done = true; if (canApprovePhotos) o.media_uploaded = true; else notes.push('Media says “Done” — a manager still has to mark the photos as ready'); }
       o.view_type = matchList(cfg.view_types, raw.view_type) || (raw.view_type ? String(raw.view_type) : null);
       o.price = firstNumber(raw.price);
       o.currency = currencyOf(raw.currency) || currencyOf(raw.price);

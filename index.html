@@ -55,7 +55,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.18.0';
+    const APP_VERSION = 'v1.19.0';
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_jdkL0GvmNoJGHnzadNAqgA_vuiFLthv';   // publishable key — safe here, RLS protects the data
@@ -139,7 +139,7 @@
     const FIELD_LABEL = {
       title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
       building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
-      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', media_uploaded: 'Photos ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited', owner_name: 'Owner name', owner_phone: 'Owner phone',
+      furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', photography_done: 'Photography done?', media_uploaded: 'Photos ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited', owner_name: 'Owner name', owner_phone: 'Owner phone',
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', price_note: 'Price details (per month, incl. maintenance…)', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
       cover_photo_belongs: 'Cover photo belongs to this unit', date_received: 'Date received (SLA start)', source_type: 'Source type',
@@ -463,14 +463,15 @@
     const FORM_GROUPS = [
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
       ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
-      ['Media', ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
+      ['Media', ['photography_done', 'media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'price_note', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const FORM_TOUR = { Basics: 'form-basics', Specs: 'form-specs', Media: 'form-media', Commercial: 'form-commercial', Marketing: 'form-marketing', 'Owner & source': 'form-owner' };   // guide-tour anchors
     const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
-    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'photography_done', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const MEDIA_DETAIL = ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs'];      // asked only once photography is done
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
 
     const FacilitiesInput = ({ value, onChange, options, bad }) => {
@@ -492,7 +493,7 @@
     };
 
     const ListingForm = ({ listing, prefill, offline: offlineNew, onClose, onSaved }) => {      // prefill: a listing born from a photography request
-      const { me, cfg, data, save, reloadWhere, toast } = useApp();
+      const { me, cfg, data, save, reloadWhere, reloadTable, toast } = useApp();
       const isEdit = !!listing; const offline = isEdit ? !!listing.is_offline : !!offlineNew;
       const [f, setF] = useState(() => {
         const base = { facilities: [], currency: null, date_received: new Date().toISOString(), source_type: null, media_images_count: '', media_videos_count: '' };
@@ -501,6 +502,7 @@
         if (listing && listing.media_images_count === 0) src.media_images_count = '0';
         if (listing && listing.media_videos_count === 0) src.media_videos_count = '0';
         src.facilities = src.facilities || [];
+        if (src.photography_done == null && (prefill ? prefill.photo_request_id : MEDIA_DETAIL.some((k) => src[k] != null))) src.photography_done = true;   // photos clearly exist already
         return src;
       });
       const [busy, setBusy] = useState(false);
@@ -537,6 +539,7 @@
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
+        if (payload.photography_done !== true) MEDIA_DETAIL.forEach((k) => delete payload[k]);      // hidden questions are left exactly as they were
         if (!isEdit && prefill && prefill.photo_request_id) { payload.photo_request_id = prefill.photo_request_id; if (prefill.photos_approved) payload.media_uploaded = true; }   // the manager's approval travels with it
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
@@ -545,7 +548,9 @@
         setBusy(false);
         if (!row) return;
         if (!isEdit && !offline) await reloadWhere('listing_channels', 'listing_id', row.id);   // created by the database trigger
-        toast(isEdit ? 'Listing saved' : `Created ${row.reference_code}`);
+        const toPhoto = row.photography_done === false && !(listing && listing.photography_done === false);
+        if (toPhoto || (isEdit && row.photography_done !== listing.photography_done)) await reloadTable('photo_requests');     // the database adds / closes the photography request
+        toast(toPhoto ? `${isEdit ? 'Saved' : `Created ${row.reference_code}`} — added to Needs photography` : isEdit ? 'Listing saved' : `Created ${row.reference_code}`);
         onSaved(row);
       };
 
@@ -567,8 +572,9 @@
             <fieldset key={g} data-tour={FORM_TOUR[g]} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
+              {g === 'Media' && f.photography_done === false && <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Not photographed yet — when you save, this {offline ? 'property' : 'listing'} is added to <b>Needs photography</b> automatically. The photo questions open here once the shoot is approved.</div>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.filter((k) => !(offline && k === 'assigned_to')).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.filter((k) => !(offline && k === 'assigned_to') && !(MEDIA_DETAIL.includes(k) && f.photography_done !== true)).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -727,6 +733,7 @@
               <div className="flex flex-col items-end gap-1.5">{off && <Badge className="bg-slate-800 text-white">Offline</Badge>}<StatusBadge status={l.status} offline={off} />{!off && <SlaChip listing={l} />}</div>
             </div>
             {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(l.date_published_claimed)} but the verifier cannot find this File Ref on the website.</div>}
+            {(() => { const pr = data.photo_requests.find((x) => x.listing_id === l.id && !['converted', 'cancelled'].includes(x.status)); return pr ? <button className="no-print mt-3 flex w-full items-center justify-between gap-2 rounded-lg bg-amber-100 p-2.5 text-left text-sm text-amber-900" onClick={() => go('photo')}><span>Waiting for photography — {photoNo(pr)} · {PHOTO_STATUS[pr.status][0]}{pr.assigned_to ? ` · ${nameOf(pr.assigned_to)}` : ''}</span><span className="whitespace-nowrap underline">Open the photography list</span></button> : null; })()}
             {l.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {l.hold_reason}</div>}
             {l.status === 'rejected' && <div className="mt-3 rounded-lg bg-rose-100 p-2.5 text-sm text-rose-900">Rejected: {l.rejection_reason}</div>}
             <div className="mt-3">
@@ -1202,9 +1209,9 @@
     const PHOTO_STATUS = {
       requested: ['Needs scheduling', 'bg-rose-100 text-rose-800'], scheduled: ['Shoot scheduled', 'bg-sky-100 text-sky-800'],
       shot: ['Shot — waiting for manager', 'bg-amber-100 text-amber-900'], ready: ['Photos approved — create the listing', 'bg-emerald-100 text-emerald-800'],
-      converted: ['Listing created', 'bg-slate-100 text-slate-600'], cancelled: ['Cancelled', 'bg-slate-200 text-slate-500'],
+      converted: ['Done — photos on the listing', 'bg-slate-100 text-slate-600'], cancelled: ['Cancelled', 'bg-slate-200 text-slate-500'],
     };
-    const PHOTO_GROUPS = [['requested', 'Needs scheduling'], ['scheduled', 'Scheduled shoots'], ['shot', 'Shot — waiting for the manager to review'], ['ready', 'Photos approved — ready to become a listing'], ['converted', 'Done — listing created'], ['cancelled', 'Cancelled']];
+    const PHOTO_GROUPS = [['requested', 'Needs scheduling'], ['scheduled', 'Scheduled shoots'], ['shot', 'Shot — waiting for the manager to review'], ['ready', 'Photos approved — ready to become a listing'], ['converted', 'Done — photos are on a listing'], ['cancelled', 'Cancelled']];
     const photoNo = (r) => 'PH-' + String(r.request_no || 0).padStart(4, '0');
     const shootOverdue = (r, now) => r.status === 'scheduled' && r.scheduled_at && new Date(r.scheduled_at).getTime() < now - 12 * 36e5;
     const waitingDays = (r, now) => Math.max(0, Math.floor((now - new Date(r.created_at).getTime()) / 864e5));
@@ -1268,7 +1275,8 @@
     };
 
     const PhotoRequestCard = ({ r, onEdit, onShot, onReason, onConvert }) => {
-      const { me, now, save, nameOf, go, toast } = useApp();
+      const { me, data, now, save, nameOf, go, toast, reloadTable } = useApp();
+      const linked = r.listing_id ? (data.listings.find((x) => x.id === r.listing_id) || data.offline.find((x) => x.id === r.listing_id)) : null;      // request born from a listing that had no photos
       const mgr = isMgr(me); const mine = r.requested_by === me.id || r.assigned_to === me.id; const can = mgr || mine;
       const st = PHOTO_STATUS[r.status]; const late = shootOverdue(r, now); const days = waitingDays(r, now);
       const open = !['converted', 'cancelled'].includes(r.status);
@@ -1276,7 +1284,7 @@
         <Card className={`border-l-4 p-3 ${late || (r.status === 'requested' && days >= 2) ? 'border-l-rose-600' : r.status === 'ready' ? 'border-l-emerald-500' : r.status === 'shot' ? 'border-l-amber-500' : 'border-l-slate-300'}`}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="font-mono text-xs font-bold text-slate-500">{photoNo(r)}</div>
+              <div className="font-mono text-xs font-bold text-slate-500">{photoNo(r)}{linked ? <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-brand-800">{linked.reference_code}</span> : null}</div>
               <div className="truncate font-semibold text-slate-900">{r.owner_name}{r.owner_phone ? <a className="ml-2 text-xs font-normal text-brand-700 underline" href={`tel:${r.owner_phone}`}>{r.owner_phone}</a> : null}</div>
               <div className="truncate text-sm text-slate-600">{[r.property_type, r.location, r.deal_type ? titleCase(r.deal_type) : null].filter(Boolean).join(' · ')}</div>
             </div>
@@ -1296,9 +1304,9 @@
           <div data-tour="photo-actions" className="no-print mt-3 flex flex-wrap gap-2">
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onEdit(r)}>{r.status === 'requested' ? 'Assign / schedule' : 'Edit'}</Btn>}
             {can && ['requested', 'scheduled'].includes(r.status) && <Btn className="!py-1.5" onClick={() => onShot(r)}>Photos taken</Btn>}
-            {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) toast('Photos approved'); }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
+            {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) { toast(r.listing_id ? 'Photos approved — the listing now has its photos' : 'Photos approved'); if (r.listing_id) reloadTable('listings'); } }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
             {!mgr && r.status === 'shot' && <span className="self-center text-xs text-slate-500">Waiting for the manager</span>}
-            {((can && r.status === 'shot') || r.status === 'ready') && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
+            {!r.listing_id && ((can && r.status === 'shot') || r.status === 'ready') && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
             {r.listing_id && <Btn kind="soft" className="!py-1.5" onClick={() => go('listing', r.listing_id)}>Open listing</Btn>}
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onReason(r, 'cancel')}>Cancel</Btn>}
           </div>
@@ -1336,7 +1344,7 @@
           {reason && reason.kind === 'cancel' && <ReasonModal kind="danger" title={`Cancel ${photoNo(reason.req)}`} label="Reason (mandatory)" confirmLabel="Cancel request" onClose={() => setReason(null)} onConfirm={async (txt) => { if (await save('photo_requests', { status: 'cancelled', cancel_reason: txt }, reason.req.id)) setReason(null); }} />}
           {reason && reason.kind === 'reshoot' && <ReasonModal kind="danger" title={`${photoNo(reason.req)} — needs re-shoot`} label="What has to be re-shot or fixed? (mandatory)" confirmLabel="Send back" onClose={() => setReason(null)} onConfirm={async (txt) => { if (await save('photo_requests', { status: 'scheduled', revision_note: txt, scheduled_at: reason.req.scheduled_at || new Date().toISOString() }, reason.req.id)) { toast('Sent back to the photographer'); setReason(null); } }} />}
           {convert && <ListingForm prefill={{ photo_request_id: convert.id, photos_approved: convert.status === 'ready', owner_name: convert.owner_name, owner_phone: convert.owner_phone, location: convert.location, property_type: convert.property_type, deal_type: convert.deal_type,
-            source_type: convert.source_type, source_name: convert.source_name || convert.owner_name, media_has_logo: convert.has_logo, media_edited: convert.edited, media_uploaded: convert.status === 'ready' ? true : null }}
+            source_type: convert.source_type, source_name: convert.source_name || convert.owner_name, photography_done: true, media_has_logo: convert.has_logo, media_edited: convert.edited, media_uploaded: convert.status === 'ready' ? true : null }}
             onClose={() => setConvert(null)} onSaved={async (row) => { setConvert(null); await reloadTable('photo_requests'); go('listing', row.id); }} />}
         </div>
       );
@@ -1540,7 +1548,7 @@ Rules:
       o.is_exclusive = yesNo(raw.is_exclusive);
       o.cover_photo_belongs = yesNo(raw.cover_photo_belongs);
       const mediaDone = yesNo(raw.media_uploaded);
-      if (mediaDone) { if (canApprovePhotos) o.media_uploaded = true; else notes.push('Media says “Done” — a manager still has to mark the photos as ready'); }
+      if (mediaDone) { o.photography_done = true; if (canApprovePhotos) o.media_uploaded = true; else notes.push('Media says “Done” — a manager still has to mark the photos as ready'); }
       o.view_type = matchList(cfg.view_types, raw.view_type) || (raw.view_type ? String(raw.view_type) : null);
       o.price = firstNumber(raw.price);
       o.currency = currencyOf(raw.currency) || currencyOf(raw.price);
@@ -2389,8 +2397,8 @@ Rules:
         en: ['The basics build the reference code', 'Location + property type + sale/rent make the code LOC-TYPE-SERIAL-S/R, e.g. HD-A-1012-S: location code, unit-type code, one company-wide running number (the last one used on the website or in HV Ops + 1), S = sale, R = rent. These three lock after saving. “Date received” is the SLA start; only an admin can change it later.'],
         ar: ['الأساسيات تصنع كود المرجع', 'المنطقة + نوع الوحدة + بيع/إيجار تكوّن الكود LOC-TYPE-SERIAL-S/R مثل HD-A-1012-S: كود المنطقة، كود نوع الوحدة، رقم مسلسل واحد للشركة كلها (آخر رقم مستخدم على الموقع أو في HV Ops + 1)، S = بيع و R = إيجار. هذه الثلاثة تُقفل بعد الحفظ. «Date received» هو بداية المهلة ولا يعدّله لاحقاً إلا الأدمن.'] },
       { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-media',
-        en: ['Media flags — the manager approves', 'Photos stay on the company intranet; nothing is uploaded here. Only a manager can set “Photos ready” to Yes after reviewing them — everyone else sees “Waiting for the manager”. A listing cannot reach 100% until it is Yes. Also answer: logo added, edited, and whether the cover photo belongs to this unit.'],
-        ar: ['علامات الصور — الموافقة للمدير', 'الصور تبقى على شبكة الشركة الداخلية ولا يُرفع شيء هنا. المدير فقط يستطيع وضع «Photos ready» = Yes بعد مراجعتها — والباقون يرون «بانتظار المدير». لا تصل الوحدة إلى 100% قبل أن تصبح Yes. أجب أيضاً: هل عليها اللوجو، هل عُدّلت، وهل صورة الغلاف تخص هذه الوحدة.'] },
+        en: ['Photography done? — then the media questions', 'Start with “Photography done?”. No = on saving, the listing is added to Needs photography automatically and the other photo questions stay hidden until the shoot is approved. Yes = the questions open. Photos stay on the company intranet; nothing is uploaded here. Only a manager can set “Photos ready” to Yes after reviewing them — everyone else sees “Waiting for the manager”. A listing cannot reach 100% until it is Yes. Also answer: logo added, edited, and whether the cover photo belongs to this unit.'],
+        ar: ['هل تم التصوير؟ — ثم أسئلة الصور', 'ابدأ بسؤال «Photography done?». لا = عند الحفظ تُضاف الوحدة تلقائياً إلى قائمة «Needs photography» وتبقى باقي أسئلة الصور مخفية حتى يُعتمد التصوير. نعم = تظهر الأسئلة. الصور تبقى على شبكة الشركة الداخلية ولا يُرفع شيء هنا. المدير فقط يستطيع وضع «Photos ready» = Yes بعد مراجعتها — والباقون يرون «بانتظار المدير». لا تصل الوحدة إلى 100% قبل أن تصبح Yes. أجب أيضاً: هل عليها اللوجو، هل عُدّلت، وهل صورة الغلاف تخص هذه الوحدة.'] },
       { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-commercial',
         en: ['Specs, price and marketing', 'Fill area, floors, rooms, view and furnishing, then price, currency and “Price details” (per month, incl. maintenance…). Amounts are never converted between currencies. Facilities and selling points feed the website text.'],
         ar: ['المواصفات والسعر والتسويق', 'املأ المساحة والأدوار والغرف والإطلالة والفرش، ثم السعر والعملة و«Price details» (شهرياً، شامل الصيانة…). المبالغ لا تُحوَّل أبداً بين العملات. المرافق ونقاط البيع تُستخدم في نص الموقع.'] },
@@ -2442,8 +2450,8 @@ Rules:
 
       // ---------------------------------------------------------------- Needs photography
       { c: 'photo', page: 'photo', target: 'add-photo',
-        en: ['Needs photography', 'Register a property here when it must be photographed before it can be listed — owner name and location are enough. It gets a PH-0001 number now and its real code later. Stages: needs scheduling → scheduled → shot → approved → listing created. Red = unscheduled for 2+ days or shoot overdue.'],
-        ar: ['طلبات التصوير', 'سجّل العقار هنا عندما يحتاج تصويراً قبل أن يُدخل كوحدة — يكفي اسم المالك والمنطقة. يأخذ رقماً مثل PH-0001 الآن وكوده الحقيقي لاحقاً. المراحل: يحتاج موعداً ← موعد محدد ← تم التصوير ← تمت الموافقة ← أُنشئت الوحدة. الأحمر = بلا موعد لأكثر من يومين أو تأخر التصوير.'] },
+        en: ['Needs photography', 'A listing saved with “Photography done? = No” appears here by itself, showing its code; when the manager approves its photos the listing is updated and the request closes. You can also register a property here when it must be photographed before it can be listed — owner name and location are enough. It gets a PH-0001 number now and its real code later. Stages: needs scheduling → scheduled → shot → approved → listing created. Red = unscheduled for 2+ days or shoot overdue.'],
+        ar: ['طلبات التصوير', 'الوحدة التي تُحفظ بإجابة «Photography done? = No» تظهر هنا تلقائياً ومعها كودها؛ وعند اعتماد المدير للصور تُحدَّث الوحدة ويُغلق الطلب. سجّل العقار هنا عندما يحتاج تصويراً قبل أن يُدخل كوحدة — يكفي اسم المالك والمنطقة. يأخذ رقماً مثل PH-0001 الآن وكوده الحقيقي لاحقاً. المراحل: يحتاج موعداً ← موعد محدد ← تم التصوير ← تمت الموافقة ← أُنشئت الوحدة. الأحمر = بلا موعد لأكثر من يومين أو تأخر التصوير.'] },
       { c: 'photo', page: 'photo', action: 'open-photo-request', target: 'photo-form',
         en: ['Assign and schedule', 'Write where exactly (building, unit, keys, access), pick the photographer, the shoot date & time and who gave the property. Once a date is saved the request moves to “Shoot scheduled”.'],
         ar: ['التكليف وتحديد الموعد', 'اكتب المكان بالضبط (المبنى، الوحدة، المفاتيح، طريقة الدخول)، واختر المصوّر وموعد التصوير ومن أعطانا العقار. بمجرد حفظ الموعد ينتقل الطلب إلى «Shoot scheduled».'] },

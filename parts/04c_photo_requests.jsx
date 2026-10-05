@@ -7,9 +7,9 @@
     const PHOTO_STATUS = {
       requested: ['Needs scheduling', 'bg-rose-100 text-rose-800'], scheduled: ['Shoot scheduled', 'bg-sky-100 text-sky-800'],
       shot: ['Shot — waiting for manager', 'bg-amber-100 text-amber-900'], ready: ['Photos approved — create the listing', 'bg-emerald-100 text-emerald-800'],
-      converted: ['Listing created', 'bg-slate-100 text-slate-600'], cancelled: ['Cancelled', 'bg-slate-200 text-slate-500'],
+      converted: ['Done — photos on the listing', 'bg-slate-100 text-slate-600'], cancelled: ['Cancelled', 'bg-slate-200 text-slate-500'],
     };
-    const PHOTO_GROUPS = [['requested', 'Needs scheduling'], ['scheduled', 'Scheduled shoots'], ['shot', 'Shot — waiting for the manager to review'], ['ready', 'Photos approved — ready to become a listing'], ['converted', 'Done — listing created'], ['cancelled', 'Cancelled']];
+    const PHOTO_GROUPS = [['requested', 'Needs scheduling'], ['scheduled', 'Scheduled shoots'], ['shot', 'Shot — waiting for the manager to review'], ['ready', 'Photos approved — ready to become a listing'], ['converted', 'Done — photos are on a listing'], ['cancelled', 'Cancelled']];
     const photoNo = (r) => 'PH-' + String(r.request_no || 0).padStart(4, '0');
     const shootOverdue = (r, now) => r.status === 'scheduled' && r.scheduled_at && new Date(r.scheduled_at).getTime() < now - 12 * 36e5;
     const waitingDays = (r, now) => Math.max(0, Math.floor((now - new Date(r.created_at).getTime()) / 864e5));
@@ -73,7 +73,8 @@
     };
 
     const PhotoRequestCard = ({ r, onEdit, onShot, onReason, onConvert }) => {
-      const { me, now, save, nameOf, go, toast } = useApp();
+      const { me, data, now, save, nameOf, go, toast, reloadTable } = useApp();
+      const linked = r.listing_id ? (data.listings.find((x) => x.id === r.listing_id) || data.offline.find((x) => x.id === r.listing_id)) : null;      // request born from a listing that had no photos
       const mgr = isMgr(me); const mine = r.requested_by === me.id || r.assigned_to === me.id; const can = mgr || mine;
       const st = PHOTO_STATUS[r.status]; const late = shootOverdue(r, now); const days = waitingDays(r, now);
       const open = !['converted', 'cancelled'].includes(r.status);
@@ -81,7 +82,7 @@
         <Card className={`border-l-4 p-3 ${late || (r.status === 'requested' && days >= 2) ? 'border-l-rose-600' : r.status === 'ready' ? 'border-l-emerald-500' : r.status === 'shot' ? 'border-l-amber-500' : 'border-l-slate-300'}`}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="font-mono text-xs font-bold text-slate-500">{photoNo(r)}</div>
+              <div className="font-mono text-xs font-bold text-slate-500">{photoNo(r)}{linked ? <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-brand-800">{linked.reference_code}</span> : null}</div>
               <div className="truncate font-semibold text-slate-900">{r.owner_name}{r.owner_phone ? <a className="ml-2 text-xs font-normal text-brand-700 underline" href={`tel:${r.owner_phone}`}>{r.owner_phone}</a> : null}</div>
               <div className="truncate text-sm text-slate-600">{[r.property_type, r.location, r.deal_type ? titleCase(r.deal_type) : null].filter(Boolean).join(' · ')}</div>
             </div>
@@ -101,9 +102,9 @@
           <div data-tour="photo-actions" className="no-print mt-3 flex flex-wrap gap-2">
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onEdit(r)}>{r.status === 'requested' ? 'Assign / schedule' : 'Edit'}</Btn>}
             {can && ['requested', 'scheduled'].includes(r.status) && <Btn className="!py-1.5" onClick={() => onShot(r)}>Photos taken</Btn>}
-            {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) toast('Photos approved'); }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
+            {mgr && r.status === 'shot' && <><Btn kind="ok" className="!py-1.5" onClick={async () => { if (await save('photo_requests', { status: 'ready' }, r.id)) { toast(r.listing_id ? 'Photos approved — the listing now has its photos' : 'Photos approved'); if (r.listing_id) reloadTable('listings'); } }}>Approve photos</Btn><Btn kind="danger" className="!py-1.5" onClick={() => onReason(r, 'reshoot')}>Needs re-shoot</Btn></>}
             {!mgr && r.status === 'shot' && <span className="self-center text-xs text-slate-500">Waiting for the manager</span>}
-            {((can && r.status === 'shot') || r.status === 'ready') && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
+            {!r.listing_id && ((can && r.status === 'shot') || r.status === 'ready') && <Btn kind={r.status === 'ready' ? 'primary' : 'ghost'} className="!py-1.5" onClick={() => onConvert(r)}>Create the listing</Btn>}
             {r.listing_id && <Btn kind="soft" className="!py-1.5" onClick={() => go('listing', r.listing_id)}>Open listing</Btn>}
             {can && open && <Btn kind="ghost" className="!py-1.5" onClick={() => onReason(r, 'cancel')}>Cancel</Btn>}
           </div>
@@ -141,7 +142,7 @@
           {reason && reason.kind === 'cancel' && <ReasonModal kind="danger" title={`Cancel ${photoNo(reason.req)}`} label="Reason (mandatory)" confirmLabel="Cancel request" onClose={() => setReason(null)} onConfirm={async (txt) => { if (await save('photo_requests', { status: 'cancelled', cancel_reason: txt }, reason.req.id)) setReason(null); }} />}
           {reason && reason.kind === 'reshoot' && <ReasonModal kind="danger" title={`${photoNo(reason.req)} — needs re-shoot`} label="What has to be re-shot or fixed? (mandatory)" confirmLabel="Send back" onClose={() => setReason(null)} onConfirm={async (txt) => { if (await save('photo_requests', { status: 'scheduled', revision_note: txt, scheduled_at: reason.req.scheduled_at || new Date().toISOString() }, reason.req.id)) { toast('Sent back to the photographer'); setReason(null); } }} />}
           {convert && <ListingForm prefill={{ photo_request_id: convert.id, photos_approved: convert.status === 'ready', owner_name: convert.owner_name, owner_phone: convert.owner_phone, location: convert.location, property_type: convert.property_type, deal_type: convert.deal_type,
-            source_type: convert.source_type, source_name: convert.source_name || convert.owner_name, media_has_logo: convert.has_logo, media_edited: convert.edited, media_uploaded: convert.status === 'ready' ? true : null }}
+            source_type: convert.source_type, source_name: convert.source_name || convert.owner_name, photography_done: true, media_has_logo: convert.has_logo, media_edited: convert.edited, media_uploaded: convert.status === 'ready' ? true : null }}
             onClose={() => setConvert(null)} onSaved={async (row) => { setConvert(null); await reloadTable('photo_requests'); go('listing', row.id); }} />}
         </div>
       );

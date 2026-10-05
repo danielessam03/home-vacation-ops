@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -278,6 +278,27 @@ ok('online serial ignores offline codes', r.rows[0].reference_code === 'HD-V-' +
 r = await db.query(`select count(*)::int n from ops_vw_listing_sla where is_offline`); ok('SLA view leaves offline out', r.rows[0].n === 0);
 await expectErr('offline can never be marked published', `update ops_listings set status='published_claimed' where id='${OFF1}'`, /never published/);
 await expectErr('cannot move between offline and listings', `update ops_listings set is_offline=false where id='${OFF1}'`, /cannot be moved/);
+await asService();
+
+// "Photography done?" (sql/017): No -> request on the photography list; manager approval -> photos ready on the listing
+await asUser(D1);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,owner_name,entered_by,photography_done) values ('Hadaba','Apartment','sale','owner','x','Mr Photo','${D1}',false) returning id, reference_code`);
+const NP = r.rows[0].id; const NPcode = r.rows[0].reference_code;
+r = await db.query(`select id, status, owner_name, notes from ops_photo_requests where listing_id='${NP}'`);
+ok('photography not done => request created for the listing', r.rows.length === 1 && r.rows[0].status === 'requested' && r.rows[0].owner_name === 'Mr Photo' && r.rows[0].notes.includes(NPcode), JSON.stringify(r.rows));
+const NPreq = r.rows[0].id;
+await db.exec(`update ops_listings set title='t' where id='${NP}'`);
+r = await db.query(`select count(*)::int n from ops_photo_requests where listing_id='${NP}'`); ok('no duplicate request on later saves', r.rows[0].n === 1);
+await db.exec(`update ops_photo_requests set status='shot', has_logo=true, edited=false, intranet_folder='f' where id='${NPreq}'`);
+await expectErr('staff cannot approve the photos', `update ops_photo_requests set status='ready' where id='${NPreq}'`, /Only the manager/);
+await asUser(M);
+await db.exec(`update ops_photo_requests set status='ready' where id='${NPreq}'`);
+r = await db.query(`select l.photography_done, l.media_uploaded, l.media_has_logo, l.media_edited, l.media_approved_by, q.status from ops_listings l join ops_photo_requests q on q.listing_id=l.id where l.id='${NP}'`);
+ok('manager approval => listing photos ready + answers copied, request closed', r.rows[0].photography_done === true && r.rows[0].media_uploaded === true && r.rows[0].media_has_logo === true && r.rows[0].media_edited === false && r.rows[0].media_approved_by === M && r.rows[0].status === 'converted', JSON.stringify(r.rows[0]));
+await asUser(D1);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by,photography_done) values ('Hadaba','Apartment','sale','owner','x','${D1}',false) returning id`);
+await db.exec(`update ops_listings set photography_done=true where id='${r.rows[0].id}'`);
+r = await db.query(`select status from ops_photo_requests where listing_id='${r.rows[0].id}'`); ok('answer changed to Yes => untouched request cancelled', r.rows[0].status === 'cancelled');
 await asService();
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

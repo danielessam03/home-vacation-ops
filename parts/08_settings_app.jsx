@@ -336,7 +336,13 @@
       }, [session && session.user.id]);
       // red counters: what is waiting for this person in each system (public.hv_alert_counts via HVCore)
       const [hvAlerts, setHvAlerts] = useState(null);
-      useEffect(() => { if (!session || !window.HVCore || !HVCore.watchAlerts) return; return HVCore.watchAlerts(sbc, setHvAlerts); }, [session && session.user.id]);
+      useEffect(() => {
+        if (!session) return;
+        if (window.HVCore && HVCore.watchAlerts) return HVCore.watchAlerts(sbc, setHvAlerts);
+        let alive = true; const run = () => { try { sbc.rpc('hv_alert_counts').then(({ data }) => { if (alive && data && typeof data === 'object') setHvAlerts(data); }).catch(() => {}); } catch (e) {} };
+        run(); const tm = setInterval(run, 60000);
+        return () => { alive = false; clearInterval(tm); };
+      }, [session && session.user.id]);
       const hvN = (k) => (window.HVCore && HVCore.alertN ? HVCore.alertN(hvAlerts, k) : 0);
       const hvTitle = (k) => (window.HVCore && HVCore.alertTitle ? HVCore.alertTitle(hvAlerts, k, false) : '');
       const hvOthers = HV_APPS.reduce((s, a) => s + hvN(a[2]), 0);

@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.20.0';
+    const APP_VERSION = 'v1.21.0';
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';

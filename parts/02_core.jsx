@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.21.1';
+    const APP_VERSION = 'v1.21.2';
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
@@ -13,6 +13,7 @@
       ['HR & Payroll', 'https://home-vacation-hr.pages.dev', 'hr'], ['Maintenance', 'https://hv-maintenance-system.pages.dev', 'maint'],
       ['Property management (CRM)', 'https://property-management-crm.pages.dev', 'crm'],      // 3rd item = key in hv_my_systems()
       ['HV Finance (accounting)', 'https://home-vacation-finance.pages.dev', 'fin'],
+      ['HV Management (CEO dashboard)', 'https://home-vacation-management.pages.dev', 'mgmt'],
     ];
 
     /* Shared Home Vacation brand assets — identical to HR / Maintenance / CRM. LOGO_LOCKUP = mark + wordmark, LOGO_MARK = the arch alone. */

@@ -26,12 +26,13 @@
       ['price', 'price'], ['Currency', 'currency'], ['Facilities / Amenities', 'facilities'], ['Selling Points ', 'selling_points'],
       ['Buyer Persona (Nationality, Age, Gender)', 'buyer_persona'], ['Date of receving ', 'date_received'], ['Date of publishing ', 'date_published'],
       ['Cover photo (belong/not belong) to the unit ', 'cover_photo_belongs'],
+      ['Garden (size in sqm, or No)', 'garden'], ['Terrace (size in sqm, or No)', 'terrace'],      // added 2026-10-20, after the office rows
     ];
     // label (letters only, lower case) -> field; the first rule whose prefix matches wins
     const BASIC_LABEL_RULES = [
       ['location', 'location'], ['propertytype', 'property_type'], ['type', 'property_type'], ['forsale', 'deal_type'], ['saleor', 'deal_type'], ['forrent', 'deal_type'],
       ['area', 'area_sqm'], ['buildinglevel', 'building_levels'], ['floor', 'floor'], ['bedroom', 'bedrooms'], ['bathroom', 'bathrooms'], ['balcon', 'balconies'],
-      ['furnish', 'furnished'], ['media', 'media_uploaded'], ['exclusive', 'is_exclusive'], ['view', 'view_type'], ['price', 'price'], ['currency', 'currency'],
+      ['furnish', 'furnished'], ['garden', 'garden'], ['terrac', 'terrace'], ['terras', 'terrace'], ['media', 'media_uploaded'], ['exclusive', 'is_exclusive'], ['view', 'view_type'], ['price', 'price'], ['currency', 'currency'],
       ['facilit', 'facilities'], ['amenit', 'facilities'], ['sellingpoint', 'selling_points'], ['buyerpersona', 'buyer_persona'], ['dateofrec', 'date_received'],
       ['datereceiv', 'date_received'], ['dateofpubl', 'date_published'], ['coverphoto', 'cover_photo_belongs'], ['referencecode', 'reference_code'], ['fileref', 'reference_code'],
       ['ownerphone', 'owner_phone'], ['ownername', 'owner_name'], ['owner', 'owner_name'], ['title', 'title'],
@@ -94,6 +95,11 @@
       o.deal_type = /rent|ايجار|إيجار/.test(deal) ? 'rent' : /sale|sell|بيع/.test(deal) ? 'sale' : o.reference_code && /-R$/.test(o.reference_code) ? 'rent' : o.reference_code && /-S$/.test(o.reference_code) ? 'sale' : null;
       ['area_sqm', 'building_levels', 'bedrooms', 'bathrooms', 'balconies'].forEach((k) => { const n = firstNumber(raw[k]); if (n != null) o[k] = n; else if (raw[k] !== undefined && raw[k] !== '') notes.push(`${k.replace(/_/g, ' ')} “${raw[k]}” is not a number`); });
       if (raw.floor !== undefined && raw.floor !== '') { const f = /ground|أرضي|ارضي|^g$/i.test(String(raw.floor)) ? 0 : firstNumber(raw.floor); if (f != null) o.floor = f; else notes.push(`Floor “${raw.floor}” not understood`); }
+      [['garden', 'has_garden', 'garden_sqm'], ['terrace', 'has_terrace', 'terrace_sqm']].forEach(([k, yes, size]) => {       // "120", "Yes 40m", "No"
+        const raw_ = raw[k]; if (raw_ === undefined || raw_ === '') return;
+        const n = firstNumber(raw_); const yn = yesNo(raw_);
+        if (n != null && n > 0) { o[yes] = true; o[size] = n; } else if (yn != null) { o[yes] = yn; } else notes.push(`${k} “${raw_}” not understood (size in sqm, Yes or No)`);
+      });
       o.furnished = yesNo(raw.furnished); if (raw.furnished && o.furnished == null) notes.push(`Furnished “${raw.furnished}” not understood (Yes / No)`);
       o.is_exclusive = yesNo(raw.is_exclusive);
       o.cover_photo_belongs = yesNo(raw.cover_photo_belongs);
@@ -214,6 +220,8 @@
         case 'deal_type': return l.deal_type === 'rent' ? 'Rent' : l.deal_type === 'sale' ? 'Sale' : '';
         case 'area_sqm': return l.area_sqm != null ? Number(l.area_sqm) : '';
         case 'furnished': case 'is_exclusive': return l[key] == null ? '' : l[key] ? 'Yes' : 'No';
+        case 'garden': return l.has_garden == null ? '' : l.has_garden ? (l.garden_sqm != null ? Number(l.garden_sqm) : 'Yes') : 'No';
+        case 'terrace': return l.has_terrace == null ? '' : l.has_terrace ? (l.terrace_sqm != null ? Number(l.terrace_sqm) : 'Yes') : 'No';
         case 'media_uploaded': return l.media_uploaded ? 'Done' : '';
         case 'cover_photo_belongs': return l.cover_photo_belongs == null ? '' : l.cover_photo_belongs ? 'Belong' : 'Not belong';
         case 'price': return l.price_note ? l.price_note : l.price != null ? Number(l.price) : '';      // the office sheets write the price as text

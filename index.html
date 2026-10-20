@@ -55,7 +55,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.21.2';
+    const APP_VERSION = 'v1.22.0';
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
@@ -140,7 +140,7 @@
     // The 22 required fields + the rest of the form. type: text | num | bool | select | multi | area
     const FIELD_LABEL = {
       title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
-      building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
+      building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies', has_garden: 'Garden?', garden_sqm: 'Garden size (sqm)', has_terrace: 'Terrace?', terrace_sqm: 'Terrace size (sqm)',
       furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', photography_done: 'Photography done?', media_uploaded: 'Photos ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited', owner_name: 'Owner name', owner_phone: 'Owner phone',
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', price_note: 'Price details (per month, incl. maintenance…)', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',
@@ -464,15 +464,16 @@
 
     const FORM_GROUPS = [
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
-      ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
+      ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'has_garden', 'garden_sqm', 'has_terrace', 'terrace_sqm', 'furnished', 'view_type']],
       ['Media', ['photography_done', 'media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'price_note', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const FORM_TOUR = { Basics: 'form-basics', Specs: 'form-specs', Media: 'form-media', Commercial: 'form-commercial', Marketing: 'form-marketing', 'Owner & source': 'form-owner' };   // guide-tour anchors
-    const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
-    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'photography_done', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'garden_sqm', 'terrace_sqm', 'media_images_count', 'media_videos_count', 'price'];
+    const SIZE_OF = { garden_sqm: 'has_garden', terrace_sqm: 'has_terrace' };      // a size is asked only after a Yes
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'has_garden', 'has_terrace', 'cover_photo_belongs', 'photography_done', 'media_uploaded', 'media_has_logo', 'media_edited'];
     const MEDIA_DETAIL = ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs'];      // asked only once photography is done
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
 
@@ -541,7 +542,8 @@
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
-        if (payload.photography_done !== true) MEDIA_DETAIL.forEach((k) => delete payload[k]);      // hidden questions are left exactly as they were
+        if (payload.photography_done !== true) MEDIA_DETAIL.forEach((k) => delete payload[k]);
+        Object.entries(SIZE_OF).forEach(([size, yes]) => { if (payload[yes] !== true) payload[size] = null; });      // hidden questions are left exactly as they were
         if (!isEdit && prefill && prefill.photo_request_id) { payload.photo_request_id = prefill.photo_request_id; if (prefill.photos_approved) payload.media_uploaded = true; }   // the manager's approval travels with it
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
@@ -576,7 +578,7 @@
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
               {g === 'Media' && f.photography_done === false && <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Not photographed yet — when you save, this {offline ? 'property' : 'listing'} is added to <b>Needs photography</b> automatically. The photo questions open here once the shoot is approved.</div>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.filter((k) => !(offline && k === 'assigned_to') && !(MEDIA_DETAIL.includes(k) && f.photography_done !== true)).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.filter((k) => !(offline && k === 'assigned_to') && !(MEDIA_DETAIL.includes(k) && f.photography_done !== true) && !(SIZE_OF[k] && f[SIZE_OF[k]] !== true)).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -764,9 +766,9 @@
                 <Card key={g} className="p-4">
                   <h3 className="mb-2 text-sm font-semibold text-brand-800">{g}</h3>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-                    {keys.map((k) => {
+                    {keys.filter((k) => !(SIZE_OF[k] && l[SIZE_OF[k]] !== true)).map((k) => {
                       const v = l[k]; const miss = (l.missing_fields || []).includes(k);
-                      const text = k === 'assigned_to' ? nameOf(v) : k === 'date_received' ? fmtDateTime(v) : k === 'price' ? money(v, l.currency) : BOOL_FIELDS.includes(k) ? (v == null ? null : v ? 'Yes' : 'No') : Array.isArray(v) ? v.join(', ') : ['source_type', 'deal_type'].includes(k) ? titleCase(v) : v;
+                      const text = k === 'assigned_to' ? nameOf(v) : SIZE_OF[k] ? (v == null ? null : `${Number(v)} sqm`) : k === 'date_received' ? fmtDateTime(v) : k === 'price' ? money(v, l.currency) : BOOL_FIELDS.includes(k) ? (v == null ? null : v ? 'Yes' : 'No') : Array.isArray(v) ? v.join(', ') : ['source_type', 'deal_type'].includes(k) ? titleCase(v) : v;
                       return (
                         <div key={k} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ''}>
                           <dt className="text-xs text-slate-500">{FIELD_LABEL[k]}</dt>
@@ -1385,7 +1387,7 @@ Rules:
         ['Reference code', l.reference_code], ['Listing type', l.deal_type === 'rent' ? 'For rent' : 'For sale'], ['Property type', l.property_type],
         ['Location', `${l.location}, Hurghada / Red Sea, Egypt`], ['Working title', l.title],
         ['Area', l.area_sqm == null ? null : `${l.area_sqm} sqm`], ['Bedrooms', l.bedrooms == null ? null : (Number(l.bedrooms) === 0 ? 'Studio / no separate bedroom' : l.bedrooms)], ['Bathrooms', l.bathrooms],
-        ['Balconies', l.balconies], ['Floor', l.floor == null ? null : aiFloor(l.floor)], ['Building levels', l.building_levels], ['Furnished', l.furnished], ['View', l.view_type],
+        ['Balconies', l.balconies], ['Garden', l.has_garden == null ? null : l.has_garden ? (l.garden_sqm ? `Yes — about ${Number(l.garden_sqm)} sqm` : 'Yes') : 'No'], ['Terrace', l.has_terrace == null ? null : l.has_terrace ? (l.terrace_sqm ? `Yes — about ${Number(l.terrace_sqm)} sqm` : 'Yes') : 'No'], ['Floor', l.floor == null ? null : aiFloor(l.floor)], ['Building levels', l.building_levels], ['Furnished', l.furnished], ['View', l.view_type],
         ['Price', l.price == null ? null : `${Number(l.price).toLocaleString('en-US')} ${l.currency || ''}`.trim()], ['Price details', l.price_note || undefined], ['Exclusive to Home Vacation', l.is_exclusive ? true : undefined],      // only worth saying when it IS exclusive
         ['Facilities', l.facilities], ['Selling points (from our team)', l.selling_points],
         ['Target buyer — nationality', l.buyer_persona_nationality], ['Target buyer — age range', l.buyer_persona_age_range], ['Target buyer — profile', l.buyer_persona_gender],
@@ -1478,12 +1480,13 @@ Rules:
       ['price', 'price'], ['Currency', 'currency'], ['Facilities / Amenities', 'facilities'], ['Selling Points ', 'selling_points'],
       ['Buyer Persona (Nationality, Age, Gender)', 'buyer_persona'], ['Date of receving ', 'date_received'], ['Date of publishing ', 'date_published'],
       ['Cover photo (belong/not belong) to the unit ', 'cover_photo_belongs'],
+      ['Garden (size in sqm, or No)', 'garden'], ['Terrace (size in sqm, or No)', 'terrace'],      // added 2026-10-20, after the office rows
     ];
     // label (letters only, lower case) -> field; the first rule whose prefix matches wins
     const BASIC_LABEL_RULES = [
       ['location', 'location'], ['propertytype', 'property_type'], ['type', 'property_type'], ['forsale', 'deal_type'], ['saleor', 'deal_type'], ['forrent', 'deal_type'],
       ['area', 'area_sqm'], ['buildinglevel', 'building_levels'], ['floor', 'floor'], ['bedroom', 'bedrooms'], ['bathroom', 'bathrooms'], ['balcon', 'balconies'],
-      ['furnish', 'furnished'], ['media', 'media_uploaded'], ['exclusive', 'is_exclusive'], ['view', 'view_type'], ['price', 'price'], ['currency', 'currency'],
+      ['furnish', 'furnished'], ['garden', 'garden'], ['terrac', 'terrace'], ['terras', 'terrace'], ['media', 'media_uploaded'], ['exclusive', 'is_exclusive'], ['view', 'view_type'], ['price', 'price'], ['currency', 'currency'],
       ['facilit', 'facilities'], ['amenit', 'facilities'], ['sellingpoint', 'selling_points'], ['buyerpersona', 'buyer_persona'], ['dateofrec', 'date_received'],
       ['datereceiv', 'date_received'], ['dateofpubl', 'date_published'], ['coverphoto', 'cover_photo_belongs'], ['referencecode', 'reference_code'], ['fileref', 'reference_code'],
       ['ownerphone', 'owner_phone'], ['ownername', 'owner_name'], ['owner', 'owner_name'], ['title', 'title'],
@@ -1546,6 +1549,11 @@ Rules:
       o.deal_type = /rent|ايجار|إيجار/.test(deal) ? 'rent' : /sale|sell|بيع/.test(deal) ? 'sale' : o.reference_code && /-R$/.test(o.reference_code) ? 'rent' : o.reference_code && /-S$/.test(o.reference_code) ? 'sale' : null;
       ['area_sqm', 'building_levels', 'bedrooms', 'bathrooms', 'balconies'].forEach((k) => { const n = firstNumber(raw[k]); if (n != null) o[k] = n; else if (raw[k] !== undefined && raw[k] !== '') notes.push(`${k.replace(/_/g, ' ')} “${raw[k]}” is not a number`); });
       if (raw.floor !== undefined && raw.floor !== '') { const f = /ground|أرضي|ارضي|^g$/i.test(String(raw.floor)) ? 0 : firstNumber(raw.floor); if (f != null) o.floor = f; else notes.push(`Floor “${raw.floor}” not understood`); }
+      [['garden', 'has_garden', 'garden_sqm'], ['terrace', 'has_terrace', 'terrace_sqm']].forEach(([k, yes, size]) => {       // "120", "Yes 40m", "No"
+        const raw_ = raw[k]; if (raw_ === undefined || raw_ === '') return;
+        const n = firstNumber(raw_); const yn = yesNo(raw_);
+        if (n != null && n > 0) { o[yes] = true; o[size] = n; } else if (yn != null) { o[yes] = yn; } else notes.push(`${k} “${raw_}” not understood (size in sqm, Yes or No)`);
+      });
       o.furnished = yesNo(raw.furnished); if (raw.furnished && o.furnished == null) notes.push(`Furnished “${raw.furnished}” not understood (Yes / No)`);
       o.is_exclusive = yesNo(raw.is_exclusive);
       o.cover_photo_belongs = yesNo(raw.cover_photo_belongs);
@@ -1666,6 +1674,8 @@ Rules:
         case 'deal_type': return l.deal_type === 'rent' ? 'Rent' : l.deal_type === 'sale' ? 'Sale' : '';
         case 'area_sqm': return l.area_sqm != null ? Number(l.area_sqm) : '';
         case 'furnished': case 'is_exclusive': return l[key] == null ? '' : l[key] ? 'Yes' : 'No';
+        case 'garden': return l.has_garden == null ? '' : l.has_garden ? (l.garden_sqm != null ? Number(l.garden_sqm) : 'Yes') : 'No';
+        case 'terrace': return l.has_terrace == null ? '' : l.has_terrace ? (l.terrace_sqm != null ? Number(l.terrace_sqm) : 'Yes') : 'No';
         case 'media_uploaded': return l.media_uploaded ? 'Done' : '';
         case 'cover_photo_belongs': return l.cover_photo_belongs == null ? '' : l.cover_photo_belongs ? 'Belong' : 'Not belong';
         case 'price': return l.price_note ? l.price_note : l.price != null ? Number(l.price) : '';      // the office sheets write the price as text
@@ -2398,6 +2408,9 @@ Rules:
       { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-basics',
         en: ['The basics build the reference code', 'Location + property type + sale/rent make the code LOC-TYPE-SERIAL-S/R, e.g. HD-A-1012-S: location code, unit-type code, one company-wide running number (the last one used on the website or in HV Ops + 1), S = sale, R = rent. These three lock after saving. “Date received” is the SLA start; only an admin can change it later.'],
         ar: ['الأساسيات تصنع كود المرجع', 'المنطقة + نوع الوحدة + بيع/إيجار تكوّن الكود LOC-TYPE-SERIAL-S/R مثل HD-A-1012-S: كود المنطقة، كود نوع الوحدة، رقم مسلسل واحد للشركة كلها (آخر رقم مستخدم على الموقع أو في HV Ops + 1)، S = بيع و R = إيجار. هذه الثلاثة تُقفل بعد الحفظ. «Date received» هو بداية المهلة ولا يعدّله لاحقاً إلا الأدمن.'] },
+      { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-specs',
+        en: ['Specs — garden and terrace included', 'Area, levels, floor, rooms and balconies, then “Garden?” and “Terrace?”: answer Yes and a size box appears — the size goes into the AI brief and the Basic Info sheet so the description can mention it. Furnished and the view close the group.'],
+        ar: ['المواصفات — ومعها الحديقة والتراس', 'المساحة والأدوار والدور والغرف والبلكونات، ثم «Garden?» و«Terrace?»: أجب نعم فتظهر خانة المساحة — وتدخل المساحة في ملخص الذكاء الاصطناعي وملف Basic Info ليذكرها الوصف. الفرش والإطلالة يختمان المجموعة.'] },
       { c: 'entry', page: 'listings', action: 'open-new-listing', target: 'form-media',
         en: ['Photography done? — then the media questions', 'Start with “Photography done?”. No = on saving, the listing is added to Needs photography automatically and the other photo questions stay hidden until the shoot is approved. Yes = the questions open. Photos stay on the company intranet; nothing is uploaded here. Only a manager can set “Photos ready” to Yes after reviewing them — everyone else sees “Waiting for the manager”. A listing cannot reach 100% until it is Yes. Also answer: logo added, edited, and whether the cover photo belongs to this unit.'],
         ar: ['هل تم التصوير؟ — ثم أسئلة الصور', 'ابدأ بسؤال «Photography done?». لا = عند الحفظ تُضاف الوحدة تلقائياً إلى قائمة «Needs photography» وتبقى باقي أسئلة الصور مخفية حتى يُعتمد التصوير. نعم = تظهر الأسئلة. الصور تبقى على شبكة الشركة الداخلية ولا يُرفع شيء هنا. المدير فقط يستطيع وضع «Photos ready» = Yes بعد مراجعتها — والباقون يرون «بانتظار المدير». لا تصل الوحدة إلى 100% قبل أن تصبح Yes. أجب أيضاً: هل عليها اللوجو، هل عُدّلت، وهل صورة الغلاف تخص هذه الوحدة.'] },

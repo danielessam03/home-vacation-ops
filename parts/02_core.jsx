@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.21.2';
+    const APP_VERSION = 'v1.22.0';
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
     // The UNIFIED Home Vacation project — the same database and the same logins as HR, Maintenance and the CRM.
     const SUPABASE_URL = 'https://plwyzkqlbzcikmuurjqg.supabase.co';
@@ -88,7 +88,7 @@
     // The 22 required fields + the rest of the form. type: text | num | bool | select | multi | area
     const FIELD_LABEL = {
       title: 'Title', location: 'Location', property_type: 'Property type', deal_type: 'Sale / Rent', area_sqm: 'Area (sqm)',
-      building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies',
+      building_levels: 'Building levels', floor: 'Floor', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', balconies: 'Balconies', has_garden: 'Garden?', garden_sqm: 'Garden size (sqm)', has_terrace: 'Terrace?', terrace_sqm: 'Terrace size (sqm)',
       furnished: 'Furnished', media_images_count: 'Images (count)', media_videos_count: 'Videos (count)', media_drive_link: 'Media drive link', photography_done: 'Photography done?', media_uploaded: 'Photos ready (approved by manager)', media_has_logo: 'Photos have the logo', media_edited: 'Photos edited', owner_name: 'Owner name', owner_phone: 'Owner phone',
       is_exclusive: 'Exclusive', view_type: 'View', price: 'Price', currency: 'Currency', price_note: 'Price details (per month, incl. maintenance…)', facilities: 'Facilities', selling_points: 'Selling points',
       buyer_persona_nationality: 'Buyer persona — nationality', buyer_persona_age_range: 'Buyer persona — age range', buyer_persona_gender: 'Buyer persona — gender',

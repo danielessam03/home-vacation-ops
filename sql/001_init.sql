@@ -129,6 +129,10 @@ alter table ops_listings add column if not exists date_ready timestamptz;
 alter table ops_listings add column if not exists price_note text;
 alter table ops_listings add column if not exists is_offline boolean not null default false;
 alter table ops_listings add column if not exists photography_done boolean;
+alter table ops_listings add column if not exists has_garden boolean;
+alter table ops_listings add column if not exists garden_sqm numeric(10,2);
+alter table ops_listings add column if not exists has_terrace boolean;
+alter table ops_listings add column if not exists terrace_sqm numeric(10,2);
 alter table ops_listings add column if not exists photo_request_id uuid;      -- FK added in 012 (table is created there)
 create index if not exists ops_idx_listings_status on ops_listings(status);
 create index if not exists ops_idx_listings_entered_by on ops_listings(entered_by);

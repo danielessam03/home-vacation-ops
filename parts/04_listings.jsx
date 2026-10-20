@@ -15,15 +15,16 @@
 
     const FORM_GROUPS = [
       ['Basics', ['title', 'location', 'property_type', 'deal_type', 'date_received']],
-      ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'furnished', 'view_type']],
+      ['Specs', ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'has_garden', 'garden_sqm', 'has_terrace', 'terrace_sqm', 'furnished', 'view_type']],
       ['Media', ['photography_done', 'media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs']],
       ['Commercial', ['price', 'currency', 'price_note', 'is_exclusive']],
       ['Marketing', ['facilities', 'selling_points', 'buyer_persona_nationality', 'buyer_persona_age_range', 'buyer_persona_gender']],
       ['Owner & source', ['owner_name', 'owner_phone', 'source_type', 'source_name', 'source_contact', 'assigned_to']],
     ];
     const FORM_TOUR = { Basics: 'form-basics', Specs: 'form-specs', Media: 'form-media', Commercial: 'form-commercial', Marketing: 'form-marketing', 'Owner & source': 'form-owner' };   // guide-tour anchors
-    const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'media_images_count', 'media_videos_count', 'price'];
-    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'cover_photo_belongs', 'photography_done', 'media_uploaded', 'media_has_logo', 'media_edited'];
+    const NUM_FIELDS = ['area_sqm', 'building_levels', 'floor', 'bedrooms', 'bathrooms', 'balconies', 'garden_sqm', 'terrace_sqm', 'media_images_count', 'media_videos_count', 'price'];
+    const SIZE_OF = { garden_sqm: 'has_garden', terrace_sqm: 'has_terrace' };      // a size is asked only after a Yes
+    const BOOL_FIELDS = ['furnished', 'is_exclusive', 'has_garden', 'has_terrace', 'cover_photo_belongs', 'photography_done', 'media_uploaded', 'media_has_logo', 'media_edited'];
     const MEDIA_DETAIL = ['media_uploaded', 'media_has_logo', 'media_edited', 'cover_photo_belongs'];      // asked only once photography is done
     const ALWAYS_REQUIRED = ['location', 'property_type', 'deal_type', 'date_received', 'source_type', 'source_name'];   // NOT NULL in the database
 
@@ -92,7 +93,8 @@
         const payload = {};
         FORM_GROUPS.flatMap((g) => g[1]).forEach((k) => { payload[k] = normalized[k] === '' ? null : normalized[k]; });
         if (!isMgr(me)) delete payload.media_uploaded;
-        if (payload.photography_done !== true) MEDIA_DETAIL.forEach((k) => delete payload[k]);      // hidden questions are left exactly as they were
+        if (payload.photography_done !== true) MEDIA_DETAIL.forEach((k) => delete payload[k]);
+        Object.entries(SIZE_OF).forEach(([size, yes]) => { if (payload[yes] !== true) payload[size] = null; });      // hidden questions are left exactly as they were
         if (!isEdit && prefill && prefill.photo_request_id) { payload.photo_request_id = prefill.photo_request_id; if (prefill.photos_approved) payload.media_uploaded = true; }   // the manager's approval travels with it
         if (isEdit) { ['location', 'property_type', 'deal_type'].forEach((k) => delete payload[k]); if (me.role !== 'admin') delete payload.date_received; }
         else { payload.entered_by = me.id; payload.assigned_to = payload.assigned_to || cfg.default_uploader || me.id; }
@@ -127,7 +129,7 @@
               {g === 'Media' && <p className="mb-2 text-xs text-slate-500">Photos and videos stay on the company intranet — nothing is uploaded here. The manager reviews them there and marks them ready.</p>}
               {g === 'Media' && f.photography_done === false && <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Not photographed yet — when you save, this {offline ? 'property' : 'listing'} is added to <b>Needs photography</b> automatically. The photo questions open here once the shoot is approved.</div>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {keys.filter((k) => !(offline && k === 'assigned_to') && !(MEDIA_DETAIL.includes(k) && f.photography_done !== true)).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
+                {keys.filter((k) => !(offline && k === 'assigned_to') && !(MEDIA_DETAIL.includes(k) && f.photography_done !== true) && !(SIZE_OF[k] && f[SIZE_OF[k]] !== true)).map((k) => <Field key={k} label={FIELD_LABEL[k]} bad={bad(k)} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ['title', 'source_name', 'owner_name', 'date_received'].includes(k) ? 'col-span-2' : ''}>{control(k)}</Field>)}
               </div>
             </fieldset>
           ))}
@@ -315,9 +317,9 @@
                 <Card key={g} className="p-4">
                   <h3 className="mb-2 text-sm font-semibold text-brand-800">{g}</h3>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-                    {keys.map((k) => {
+                    {keys.filter((k) => !(SIZE_OF[k] && l[SIZE_OF[k]] !== true)).map((k) => {
                       const v = l[k]; const miss = (l.missing_fields || []).includes(k);
-                      const text = k === 'assigned_to' ? nameOf(v) : k === 'date_received' ? fmtDateTime(v) : k === 'price' ? money(v, l.currency) : BOOL_FIELDS.includes(k) ? (v == null ? null : v ? 'Yes' : 'No') : Array.isArray(v) ? v.join(', ') : ['source_type', 'deal_type'].includes(k) ? titleCase(v) : v;
+                      const text = k === 'assigned_to' ? nameOf(v) : SIZE_OF[k] ? (v == null ? null : `${Number(v)} sqm`) : k === 'date_received' ? fmtDateTime(v) : k === 'price' ? money(v, l.currency) : BOOL_FIELDS.includes(k) ? (v == null ? null : v ? 'Yes' : 'No') : Array.isArray(v) ? v.join(', ') : ['source_type', 'deal_type'].includes(k) ? titleCase(v) : v;
                       return (
                         <div key={k} className={['facilities', 'selling_points'].includes(k) ? 'col-span-2 sm:col-span-3' : ''}>
                           <dt className="text-xs text-slate-500">{FIELD_LABEL[k]}</dt>

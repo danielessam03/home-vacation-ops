@@ -25,7 +25,7 @@
       const open = data.listings.filter((l) => !['archived', 'rejected', 'verified_live'].includes(l.status));
       const mineL = open.filter((l) => l.entered_by === me.id || l.assigned_to === me.id);
       const withSla = (arr) => arr.map((l) => ({ l, s: slaOf(l, sla, now) })).sort((a, b) => a.s.remaining - b.s.remaining);
-      const myTasks = data.tasks.filter((t) => t.assigned_to === me.id && !['done', 'cancelled'].includes(t.status));
+      const myTasks = data.tasks.filter((t) => onTask(t, me.id) && !['done', 'cancelled'].includes(t.status));
       const dueToday = myTasks.filter((t) => t.due_at && new Date(t.due_at) < addDays(startOfDay(), 1));
       const myKpi = useMemo(() => userKpis(me, monthRange(month), data, sla, now), [data, now]);
       const taskLine = (t) => <button key={t.id} onClick={() => go('tasks')} className="flex w-full items-center justify-between gap-2 border-t border-slate-100 py-2 text-left text-sm first:border-t-0"><span className="truncate">{t.title}</span><span className={`whitespace-nowrap text-xs ${isOverdue(t, now) ? 'font-semibold text-rose-700' : 'text-slate-500'}`}>{t.due_at ? fmtDateTime(t.due_at) : ''}</span></button>;

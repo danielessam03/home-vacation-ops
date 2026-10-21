@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -308,4 +308,15 @@ ok('offline listing scored by the offline list', r.rows[0].completeness_pct === 
 r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,owner_name,entered_by) values ('Hadaba','Villa','sale','owner','x','Mr On','${A}') returning completeness_pct`);
 ok('normal listing still scored by the listings list', r.rows[0].completeness_pct < 100, String(r.rows[0].completeness_pct));
 await asService();
+// tasks for several people (sql/020)
+await asUser(M);
+r = await db.query(`insert into ops_tasks (title,assigned_to,assigned_to_multi,created_by,due_at) values ('Team job','${D1}',array['${D1}','${D2}','${D2}',null]::uuid[],'${M}', now() + interval '1 day') returning id, assigned_to, assigned_to_multi`);
+const TT = r.rows[0].id; ok('extra assignees cleaned: no nulls, no duplicates, main person not repeated', r.rows[0].assigned_to === D1 && JSON.stringify(r.rows[0].assigned_to_multi) === JSON.stringify([D2]), JSON.stringify(r.rows[0].assigned_to_multi));
+await asService(); await db.exec(`update app_users set access_ops=true where id='${D2}'`);
+await asUser(D2); await db.exec(`update ops_tasks set status='doing' where id='${TT}'`);
+r = await db.query(`select status from ops_tasks where id='${TT}'`); ok('an extra assignee can work the task', r.rows[0].status === 'doing');
+await asUser(M); await db.exec(`update ops_tasks set status='review' where id='${TT}'`); await db.exec(`update ops_tasks set status='done' where id='${TT}'`);
+r = await db.query(`select (select user_id from employees e where e.id=k.employee_id) u, external_id from kpi_entries k where external_id like 'ops:task:${TT}%' order by 2`);
+ok('both people get the HR task credit', r.rows.length === 2 && r.rows.some((x) => x.u === D1) && r.rows.some((x) => x.u === D2), JSON.stringify(r.rows));
+await asService(); await db.exec(`update app_users set access_ops=false where id='${D2}'`);
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

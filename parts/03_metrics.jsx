@@ -33,7 +33,7 @@
       const up = data.listings.filter((l) => ['published_claimed', 'verified_live'].includes(l.status) && uploaderOf(l) === user.id && inRange(l.date_received, range));
       const upSt = listingStats(up, data.listing_channels, slaCfg, now);
       const upLive = up.filter((l) => l.date_published_verified && l.date_ready);
-      const ts = data.tasks.filter((t) => t.assigned_to === user.id && t.status !== 'cancelled' && inRange(t.due_at || t.created_at, range));
+      const ts = data.tasks.filter((t) => onTask(t, user.id) && t.status !== 'cancelled' && inRange(t.due_at || t.created_at, range));
       const done = ts.filter((t) => t.status === 'done');
       const onTime = done.filter((t) => !t.due_at || (t.completed_at && new Date(t.completed_at) <= new Date(t.due_at)));
       const lateOpen = ts.filter((t) => t.status !== 'done' && t.due_at && new Date(t.due_at).getTime() < now);

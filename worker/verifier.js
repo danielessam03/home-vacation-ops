@@ -413,10 +413,10 @@ async function raiseAlerts(env) {
   }
 
   const nowIso = new Date().toISOString();
-  const tasks = await sbAll(env, `ops_tasks?select=id,title,assigned_to,due_at&status=in.(todo,doing)&due_at=lt.${nowIso}`);
+  const tasks = await sbAll(env, `ops_tasks?select=id,title,assigned_to,assigned_to_multi,due_at&status=in.(todo,doing)&due_at=lt.${nowIso}`);
   for (const t of tasks) {
     const a = { level: 'warning', title: `Task overdue — ${t.title}`, body: `Was due ${t.due_at}`, entity_type: 'task', entity_id: t.id };
-    if (t.assigned_to) alerts.push({ ...a, target_user: t.assigned_to, dedupe_key: `taskdue:${t.id}:u` });
+    for (const p of new Set([t.assigned_to, ...(t.assigned_to_multi || [])].filter(Boolean))) alerts.push({ ...a, target_user: p, dedupe_key: p === t.assigned_to ? `taskdue:${t.id}:u` : `taskdue:${t.id}:u:${p}` });
     alerts.push({ ...a, target_role: 'manager', dedupe_key: `taskdue:${t.id}:m` });
   }
 

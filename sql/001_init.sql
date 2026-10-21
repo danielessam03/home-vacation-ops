@@ -227,6 +227,7 @@ create table if not exists ops_tasks (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table ops_tasks add column if not exists assigned_to_multi uuid[] not null default '{}';
 -- not partial on purpose: the worker upserts with ON CONFLICT on these columns (NULLs never conflict)
 create unique index if not exists ops_uq_tasks_recurring on ops_tasks(recurring_template_id, recurring_for_date);
 create index if not exists ops_idx_tasks_assigned on ops_tasks(assigned_to);

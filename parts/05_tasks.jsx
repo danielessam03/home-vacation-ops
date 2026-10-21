@@ -6,13 +6,15 @@
 
     const TaskForm = ({ task, preset, onClose }) => {
       const { me, data, cfg, save, toast } = useApp();
-      const [f, setF] = useState(task || { title: '', description: '', task_type: null, assigned_to: me.id, priority: 'normal', due_at: null, listing_id: null, agency: null, ...(preset || {}) });
+      const [f, setF] = useState(task || { title: '', description: '', task_type: null, assigned_to: me.id, assigned_to_multi: [], priority: 'normal', due_at: null, listing_id: null, agency: null, ...(preset || {}) });
+      const extra = (f.assigned_to_multi || []).filter((id) => id !== f.assigned_to);
+      const toggleExtra = (id) => set('assigned_to_multi', extra.includes(id) ? extra.filter((x) => x !== id) : [...extra, id]);
       const [busy, setBusy] = useState(false);
       const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const submit = async () => {
         if (!f.title.trim()) { toast('Title is required', 'error'); return; }
         setBusy(true);
-        const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, priority: f.priority || 'normal', due_at: f.due_at, listing_id: f.listing_id, agency: f.agency };
+        const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, assigned_to_multi: extra, priority: f.priority || 'normal', due_at: f.due_at, listing_id: f.listing_id, agency: f.agency };
         if (!task) payload.created_by = me.id;
         const row = await save('tasks', payload, task ? task.id : null);
         setBusy(false); if (row) { toast('Task saved'); onClose(); }
@@ -22,12 +24,16 @@
           <div data-tour="task-form" className="grid grid-cols-2 gap-3">
             <Field label="Title" className="col-span-2" bad={!f.title.trim()}><input className={inputCls(!f.title.trim())} value={f.title} onChange={(e) => set('title', e.target.value)} autoFocus /></Field>
             <Field label="Description" className="col-span-2"><textarea rows={3} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
-            <Field label="Assignee"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
+            <Field label="Assignee (main)"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
             <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
             <Field label="Due"><input type="datetime-local" className={inputCls()} value={toLocalInput(f.due_at)} onChange={(e) => set('due_at', fromLocalInput(e.target.value))} /></Field>
             <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
             <Field label="Linked listing (optional)"><Select value={f.listing_id} onChange={(v) => set('listing_id', v)} placeholder="None" options={data.listings.filter((l) => l.status !== 'archived').slice(0, 500).map((l) => [l.id, `${l.reference_code}${l.title ? ' · ' + l.title.slice(0, 30) : ''}`])} /></Field>
             <Field label="Agency (optional)"><Select value={f.agency} onChange={(v) => set('agency', v)} placeholder="None" options={data.agencies.map((a) => [a.name, a.display_name])} /></Field>
+            <Field label={`Also give this task to${extra.length ? ` (${extra.length} more)` : ''}`} className="col-span-2">
+              <div className="flex flex-wrap gap-1.5">{data.profiles.filter((p) => p.is_active && p.id !== f.assigned_to).map((p) => <button type="button" key={p.id} onClick={() => toggleExtra(p.id)} className={`rounded-full border px-2.5 py-1 text-xs ${extra.includes(p.id) ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-700'}`}>{extra.includes(p.id) ? '✓ ' : ''}{p.full_name || p.email}</button>)}</div>
+              <p className="mt-1 text-xs text-slate-500">Everyone selected sees the task, can work it and gets the credit when it is approved.</p>
+            </Field>
           </div>
         </Modal>
       );
@@ -47,7 +53,7 @@
             {t.agency && <Badge className="bg-violet-100 text-violet-800">{titleCase(t.agency)}</Badge>}
             {t.recurring_template_id && <Badge>↻</Badge>}
           </div>
-          <div className="mt-1.5 flex items-center justify-between text-xs"><span className="text-slate-500">{nameOf(t.assigned_to)}</span><span className={over ? 'font-semibold text-rose-700' : 'text-slate-500'}>{t.due_at ? `${over ? 'Overdue · ' : ''}${fmtDateTime(t.due_at)}` : 'No due date'}</span></div>
+          <div className="mt-1.5 flex items-center justify-between text-xs"><span className="text-slate-500">{taskPeople(t).map(nameOf).join(', ')}</span><span className={over ? 'font-semibold text-rose-700' : 'text-slate-500'}>{t.due_at ? `${over ? 'Overdue · ' : ''}${fmtDateTime(t.due_at)}` : 'No due date'}</span></div>
           {t.rejection_reason && t.status !== 'done' && <div className="mt-1.5 rounded bg-amber-50 p-1.5 text-xs text-amber-900">Sent back: {t.rejection_reason}</div>}
         </div>
       );
@@ -56,7 +62,7 @@
     const TaskDetail = ({ t, onClose }) => {
       const { me, save, nameOf, go, data, toast } = useApp();
       const [edit, setEdit] = useState(false); const [back, setBack] = useState(false);
-      const mgr = isMgr(me); const mine = t.assigned_to === me.id || t.created_by === me.id;
+      const mgr = isMgr(me); const mine = onTask(t, me.id) || t.created_by === me.id;
       const move = async (status, extra = {}) => { const row = await save('tasks', { status, ...extra }, t.id); if (row) { toast(`Moved to ${titleCase(status)}`); onClose(); } };
       const l = t.listing_id && data.listings.find((x) => x.id === t.listing_id);
       if (edit) return <TaskForm task={t} onClose={onClose} />;
@@ -75,7 +81,7 @@
             {t.description && <p className="whitespace-pre-wrap text-slate-700">{t.description}</p>}
             {t.rejection_reason && <div className="rounded bg-amber-50 p-2 text-amber-900">Last sent back: {t.rejection_reason}</div>}
             <dl className="grid grid-cols-2 gap-2">
-              {[['Assignee', nameOf(t.assigned_to)], ['Created by', nameOf(t.created_by)], ['Due', fmtDateTime(t.due_at)], ['Started', fmtDateTime(t.started_at)], ['Submitted', fmtDateTime(t.completed_at)], ['Approved', t.approved_at ? `${fmtDateTime(t.approved_at)} · ${nameOf(t.approved_by)}` : '—']].map(([k, v]) => <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>)}
+              {[[taskPeople(t).length > 1 ? 'Assignees' : 'Assignee', taskPeople(t).map(nameOf).join(', ')], ['Created by', nameOf(t.created_by)], ['Due', fmtDateTime(t.due_at)], ['Started', fmtDateTime(t.started_at)], ['Submitted', fmtDateTime(t.completed_at)], ['Approved', t.approved_at ? `${fmtDateTime(t.approved_at)} · ${nameOf(t.approved_by)}` : '—']].map(([k, v]) => <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>)}
             </dl>
             {l && <button className="text-brand-700 underline" onClick={() => { onClose(); go('listing', l.id); }}>Open listing {l.reference_code}</button>}
           </div>
@@ -135,7 +141,7 @@
       const mgr = isMgr(me);
       const [who, setWho] = useState(mgr ? null : me.id); const [form, setForm] = useState(false); const [open, setOpen] = useState(openId || null); const [tpl, setTpl] = useState(false); const [col, setCol] = useState('todo');
       useTourAction({ 'open-new-task': () => { if (form) return false; setForm(true); }, close: () => setForm(false) });
-      const tasks = data.tasks.filter((t) => t.status !== 'cancelled' && (!who || t.assigned_to === who));
+      const tasks = data.tasks.filter((t) => t.status !== 'cancelled' && (!who || onTask(t, who)));
       const recentDone = (t) => t.status !== 'done' || now - new Date(t.approved_at || t.updated_at).getTime() < 14 * 864e5;
       const byCol = (k) => tasks.filter((t) => t.status === k && recentDone(t)).sort((a, b) => (new Date(a.due_at || '2999') - new Date(b.due_at || '2999')));
       const openTask = open && data.tasks.find((t) => t.id === open);

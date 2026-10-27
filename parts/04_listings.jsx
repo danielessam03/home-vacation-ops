@@ -122,7 +122,7 @@
           </div>
           {offline && !isEdit && <div className="mb-3 rounded-lg border border-slate-300 bg-slate-50 p-2 text-sm text-slate-700">Offline property — it is kept and marketed by the team but never uploaded to the website. It gets its own code (OFF-…) with a separate serial.</div>}
           {dup && <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Possible duplicate: {dup.reference_code} has the same title.</div>}
-          {isEdit && <p className="mb-3 text-xs text-slate-500">Location, type and sale/rent are part of the reference code and cannot change after creation.</p>}
+          {isEdit && <p className="mb-3 text-xs text-slate-500">Location, type and sale/rent are part of the reference code and cannot change here. An admin can change them with “Change code parts” on the listing page — the code changes with them.</p>}
           {FORM_GROUPS.map(([g, keys]) => (
             <fieldset key={g} data-tour={FORM_TOUR[g]} className="mb-5">
               <legend className="mb-2 text-sm font-semibold text-brand-800">{g}</legend>
@@ -158,7 +158,7 @@
           if (flt.comp === 'complete' && l.completeness_pct < 100) return false;
           if (flt.from && new Date(l.date_received) < new Date(flt.from)) return false;
           if (flt.to && new Date(l.date_received) >= addDays(new Date(flt.to), 1)) return false;
-          if (s && !(`${l.reference_code} ${l.title || ''} ${l.source_name || ''} ${l.owner_name || ''} ${l.owner_phone || ''}`.toLowerCase().includes(s))) return false;
+          if (s && !(`${l.reference_code} ${(l.code_history || []).map((h) => h.from).join(' ')} ${l.title || ''} ${l.source_name || ''} ${l.owner_name || ''} ${l.owner_phone || ''}`.toLowerCase().includes(s))) return false;
           return true;
         }).sort((a, b) => pubView(view) ? new Date(publishedAt(b.l) || 0) - new Date(publishedAt(a.l) || 0) : new Date(b.l.date_received) - new Date(a.l.date_received));
       }, [all, q, flt, view, cfg.sla_hours, now]);
@@ -245,10 +245,43 @@
       );
     };
 
+    // Admin only: change the three locked parts of a saved listing; the database gives the new code (same serial when it is free).
+    const RecodeModal = ({ l, onClose }) => {
+      const { me, cfg, reloadWhere, toast } = useApp();
+      const [f, setF] = useState({ location: l.location, property_type: l.property_type, deal_type: l.deal_type, reason: '' });
+      const [busy, setBusy] = useState(false);
+      const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const changed = f.location !== l.location || f.property_type !== l.property_type || f.deal_type !== l.deal_type;
+      const serial = (l.reference_code.match(/-(\d+)-[SR]$/) || [])[1];
+      const preview = serial && (cfg.location_codes || {})[f.location] && (cfg.unit_type_codes || {})[f.property_type] ? `${l.is_offline ? l.reference_code.split('-')[0] + '-' : ''}${cfg.location_codes[f.location]}-${cfg.unit_type_codes[f.property_type]}-${serial}-${f.deal_type === 'rent' ? 'R' : 'S'}`.toUpperCase() : null;
+      const submit = async () => {
+        if (!changed) { onClose(); return; }
+        setBusy(true);
+        const { data: row, error } = await sbc.rpc('ops_recode_listing', { p_id: l.id, p_location: f.location, p_property_type: f.property_type, p_deal_type: f.deal_type, p_reason: f.reason.trim() || null });
+        setBusy(false);
+        if (error) { toast(friendlyError(error), 'error'); return; }
+        await reloadWhere('listings', 'id', l.id);
+        toast(`Code changed: ${l.reference_code} → ${row.reference_code}`); onClose();
+      };
+      return (
+        <Modal title={`Change code parts — ${l.reference_code}`} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn kind="danger" disabled={busy || !changed} onClick={submit}>{busy ? 'Changing…' : 'Change and re-code'}</Btn></>}>
+          <p className="mb-3 text-sm text-slate-600">The serial number stays; the location, type and sale/rent letters follow your choice. If that exact code already belongs to another unit, the next free serial is used instead. The old code is kept in the history.</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="Location"><Select value={f.location} onChange={(v) => set('location', v || l.location)} options={Object.keys(cfg.location_codes || {}).sort()} /></Field>
+            <Field label="Property type"><Select value={f.property_type} onChange={(v) => set('property_type', v || l.property_type)} options={Object.keys(cfg.unit_type_codes || {}).sort()} /></Field>
+            <Field label="Sale / Rent"><Select value={f.deal_type} onChange={(v) => set('deal_type', v || l.deal_type)} options={[['sale', 'Sale'], ['rent', 'Rent']]} /></Field>
+            <Field label="Reason (kept in the history)" className="col-span-2 sm:col-span-3"><input className={inputCls()} value={f.reason} onChange={(e) => set('reason', e.target.value)} placeholder="e.g. owner decided to rent instead of selling" /></Field>
+          </div>
+          {changed && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><span className="text-slate-500">New code: </span><span className="font-mono text-lg font-bold text-slate-900">{preview || '(next free serial)'}</span></div>}
+          {changed && !l.is_offline && ['published_claimed', 'verified_live'].includes(l.status) && <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">This listing is on the website. After changing, update the “File Ref” on the website page too, or the website check will stop matching it.</div>}
+        </Modal>
+      );
+    };
+
     const ListingDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const l = data.listings.find((x) => x.id === id) || data.offline.find((x) => x.id === id); const off = !!(l && l.is_offline);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false); const [recode, setRecode] = useState(false);
       const channels = data.listing_channels.filter((c) => c.listing_id === id);
       const mgr = isMgr(me);
       useEffect(() => {
@@ -281,6 +314,7 @@
                   <Btn kind="ghost" className="!px-2.5 !py-1.5" onClick={() => exportBasicInfo([l], cfg, toast)}>Basic Info .xlsx</Btn>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">{off ? 'Offline property — never uploaded to the website. Use this code in the intranet folder name and when talking to clients.' : 'Paste this exact code into the WordPress “File Ref” field. It is how the website is matched.'}</p>
+                {(l.code_history || []).length > 0 && <p className="mt-0.5 text-xs text-slate-500">Previously {l.code_history.map((h) => h.from).join(', ')} — last changed {fmtDateTime(l.code_history[l.code_history.length - 1].at)} by {nameOf(l.code_history[l.code_history.length - 1].by)}{l.code_history[l.code_history.length - 1].reason ? ` · ${l.code_history[l.code_history.length - 1].reason}` : ''}</p>}
                 <h2 className="mt-2 text-base font-semibold text-slate-800">{l.title || `${l.property_type} in ${l.location}`}</h2>
                 <div className="mt-1 text-sm text-slate-700">Owner: <b>{l.owner_name || '—'}</b>{l.owner_phone ? <> · <a className="text-brand-700 underline" href={`tel:${l.owner_phone}`}>{l.owner_phone}</a></> : null}</div>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500"><span>Entered by <b className="text-slate-800">{nameOf(l.entered_by)}</b> · {fmtDateTime(l.created_at)}</span>{l.published_claimed_by && <span>Uploaded to website by <b className="text-slate-800">{nameOf(l.published_claimed_by)}</b> · {fmtDateTime(l.date_published_claimed)}</span>}{l.media_approved_by && <span>Photos approved by <b className="text-slate-800">{nameOf(l.media_approved_by)}</b> · {fmtDateTime(l.media_approved_at)}</span>}</div>
@@ -307,6 +341,7 @@
                 {mgr && !['rejected', 'archived', 'verified_live'].includes(l.status) && <Btn kind="danger" onClick={() => setReason('reject')}>Reject</Btn>}
                 {mgr && l.status === 'rejected' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Reopen as draft</Btn>}
                 {mgr && l.status !== 'archived' && <Btn kind="ghost" onClick={() => { if (confirm('Archive this listing? It is hidden, never deleted.')) setStatus('archived'); }}>Archive</Btn>}
+                {me.role === 'admin' && l.status !== 'archived' && <Btn kind="ghost" className="!text-rose-700" onClick={() => setRecode(true)}>Change code parts (location / type / sale-rent)</Btn>}
               </div>
             )}
           </Card>
@@ -371,6 +406,7 @@
           </div>
           {edit && <ListingForm listing={l} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
           {ai && <AiExportModal kind="listing" record={l} onClose={() => setAi(false)} />}
+          {recode && <RecodeModal l={l} onClose={() => setRecode(false)} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject listing" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>

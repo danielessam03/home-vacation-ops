@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.23.0';
+    const APP_VERSION = 'v1.24.0';
     const taskPeople = (t) => [...new Set([t.assigned_to, ...(t.assigned_to_multi || [])].filter(Boolean))];      // everyone a task is given to
     const onTask = (t, uid) => taskPeople(t).includes(uid);
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list

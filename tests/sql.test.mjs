@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -319,4 +319,20 @@ await asUser(M); await db.exec(`update ops_tasks set status='review' where id='$
 r = await db.query(`select (select user_id from employees e where e.id=k.employee_id) u, external_id from kpi_entries k where external_id like 'ops:task:${TT}%' order by 2`);
 ok('both people get the HR task credit', r.rows.length === 2 && r.rows.some((x) => x.u === D1) && r.rows.some((x) => x.u === D2), JSON.stringify(r.rows));
 await asService(); await db.exec(`update app_users set access_ops=false where id='${D2}'`);
+// admin changes location / type / sale-rent of a saved listing; the code follows (sql/021)
+await asUser(A);
+r = await db.query(`insert into ops_listings (location,property_type,deal_type,source_type,source_name,entered_by) values ('Hadaba','Apartment','sale','owner','x','${A}') returning id, reference_code`);
+const RC = r.rows[0].id; const RCcode = r.rows[0].reference_code; const RCserial = RCcode.match(/-(\d+)-S$/)[1];
+await asUser(D1);
+await expectErr('staff cannot change sale/rent of a saved listing', `select ops_recode_listing('${RC}', null, null, 'rent')`, /Only an admin/);
+await asUser(A);
+r = await db.query(`select reference_code, deal_type, jsonb_array_length(code_history) h from ops_recode_listing('${RC}', null, null, 'rent', 'owner changed his mind')`);
+ok('sale -> rent keeps the serial, ending becomes R', r.rows[0].reference_code === 'HD-A-' + RCserial + '-R' && r.rows[0].deal_type === 'rent' && r.rows[0].h === 1, r.rows[0].reference_code);
+r = await db.query(`select reference_code, location, property_type from ops_recode_listing('${RC}', 'Magawish', 'Villa', null, null)`);
+ok('location + type change the prefix, same serial', r.rows[0].reference_code === 'MG-V-' + RCserial + '-R' && r.rows[0].location === 'Magawish', r.rows[0].reference_code);
+r = await db.query(`select code_history -> 0 ->> 'from' f0, code_history -> 1 ->> 'to' t1 from ops_listings where id='${RC}'`);
+ok('code history kept', r.rows[0].f0 === RCcode && r.rows[0].t1 === 'MG-V-' + RCserial + '-R', JSON.stringify(r.rows[0]));
+await expectErr('direct code edits are still blocked', `update ops_listings set reference_code='HD-A-1-S' where id='${RC}'`, /cannot be changed/);
+await asService();
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

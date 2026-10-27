@@ -129,6 +129,7 @@ alter table ops_listings add column if not exists date_ready timestamptz;
 alter table ops_listings add column if not exists price_note text;
 alter table ops_listings add column if not exists is_offline boolean not null default false;
 alter table ops_listings add column if not exists photography_done boolean;
+alter table ops_listings add column if not exists code_history jsonb not null default '[]'::jsonb;
 alter table ops_listings add column if not exists has_garden boolean;
 alter table ops_listings add column if not exists garden_sqm numeric(10,2);
 alter table ops_listings add column if not exists has_terrace boolean;

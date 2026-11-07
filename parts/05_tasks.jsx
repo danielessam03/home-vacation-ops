@@ -8,7 +8,8 @@
       const { me, data, cfg, save, toast } = useApp();
       const [f, setF] = useState(task || { title: '', description: '', task_type: null, assigned_to: me.id, assigned_to_multi: [], priority: 'normal', due_at: null, listing_id: null, agency: null, ...(preset || {}) });
       const extra = (f.assigned_to_multi || []).filter((id) => id !== f.assigned_to);
-      const dueMoved = !!(task && task.due_at && (f.due_at || null) !== task.due_at);      // moving a saved due date needs a reason (the database insists)
+      const [dueTouched, setDueTouched] = useState(false);
+      const dueMoved = !!(task && task.due_at && (dueTouched || (f.due_at || null) !== task.due_at));      // moving a saved due date needs a reason (the database insists)
       const [dueReason, setDueReason] = useState('');
       const toggleExtra = (id) => set('assigned_to_multi', extra.includes(id) ? extra.filter((x) => x !== id) : [...extra, id]);
       const [busy, setBusy] = useState(false);
@@ -30,7 +31,7 @@
             <Field label="Description" className="col-span-2"><textarea rows={3} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
             <Field label="Assignee (main)"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
             <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
-            <Field label="Due"><input type="datetime-local" className={inputCls()} value={toLocalInput(f.due_at)} onChange={(e) => set('due_at', fromLocalInput(e.target.value))} /></Field>
+            <Field label="Due"><input type="datetime-local" className={inputCls()} value={toLocalInput(f.due_at)} onChange={(e) => { set('due_at', fromLocalInput(e.target.value)); if (task && task.due_at) setDueTouched(true); }} /></Field>
             <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
             {dueMoved && <Field label={`Why is the due date moving? (was ${fmtDateTime(task.due_at)})`} className="col-span-2" bad={!dueReason.trim()}><input className={inputCls(!dueReason.trim())} value={dueReason} onChange={(e) => setDueReason(e.target.value)} placeholder="Required — the managers are told" autoFocus /></Field>}
             <Field label="Linked listing (optional)"><Select value={f.listing_id} onChange={(v) => set('listing_id', v)} placeholder="None" options={data.listings.filter((l) => l.status !== 'archived').slice(0, 500).map((l) => [l.id, `${l.reference_code}${l.title ? ' · ' + l.title.slice(0, 30) : ''}`])} /></Field>

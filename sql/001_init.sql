@@ -205,6 +205,7 @@ create table if not exists ops_recurring_templates (
   created_by uuid references public.app_users(id),
   created_at timestamptz not null default now()
 );
+alter table ops_recurring_templates add column if not exists assigned_to_multi uuid[] not null default '{}';
 
 create table if not exists ops_tasks (
   id uuid primary key default gen_random_uuid(),

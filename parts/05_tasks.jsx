@@ -97,13 +97,13 @@
 
     const TemplatesModal = ({ onClose }) => {
       const { me, data, cfg, save, toast, workerCall } = useApp();
-      const blank = { title: '', description: '', task_type: null, assigned_to: null, priority: 'normal', frequency: 'daily', weekday: 0, day_of_month: 1, due_time: '17:00', is_active: true };
+      const blank = { title: '', description: '', task_type: null, assigned_to: null, assigned_to_multi: [], priority: 'normal', frequency: 'daily', weekday: 0, day_of_month: 1, due_time: '17:00', is_active: true };
       const [f, setF] = useState(null);
       const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const submit = async () => {
         if (!f.title.trim() || !f.assigned_to) { toast('Title and assignee are required', 'error'); return; }
-        const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, priority: f.priority, frequency: f.frequency,
+        const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, assigned_to_multi: (f.assigned_to_multi || []).filter((id) => id !== f.assigned_to), priority: f.priority, frequency: f.frequency,
           weekday: f.frequency === 'weekly' ? Number(f.weekday) : null, day_of_month: f.frequency === 'monthly' ? Number(f.day_of_month) : null, due_time: f.due_time, is_active: f.is_active };
         if (!f.id) payload.created_by = me.id;
         if (await save('recurring_templates', payload, f.id)) setF(null);
@@ -119,7 +119,7 @@
                 <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5">
                   <button className="min-w-0 text-left" onClick={() => setF({ ...t, due_time: (t.due_time || '17:00').slice(0, 5) })}>
                     <div className={`truncate text-sm font-medium ${t.is_active ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{t.title}</div>
-                    <div className="text-xs text-slate-500">{titleCase(t.frequency)}{t.frequency === 'weekly' ? ` · ${days[t.weekday]}` : t.frequency === 'monthly' ? ` · day ${t.day_of_month}` : ''} · due {(t.due_time || '').slice(0, 5)} · {(data.profiles.find((p) => p.id === t.assigned_to) || {}).full_name || '—'}</div>
+                    <div className="text-xs text-slate-500">{titleCase(t.frequency)}{t.frequency === 'weekly' ? ` · ${days[t.weekday]}` : t.frequency === 'monthly' ? ` · day ${t.day_of_month}` : ''} · due {(t.due_time || '').slice(0, 5)} · {taskPeople(t).map((id) => (data.profiles.find((p) => p.id === id) || {}).full_name || '—').join(', ')}</div>
                   </button>
                   <Btn kind="ghost" className="!py-1" onClick={() => save('recurring_templates', { is_active: !t.is_active }, t.id)}>{t.is_active ? 'Pause' : 'Resume'}</Btn>
                 </div>
@@ -129,13 +129,16 @@
             <div className="grid grid-cols-2 gap-3">
               <Field label="Title" className="col-span-2" bad={!f.title.trim()}><input className={inputCls(!f.title.trim())} value={f.title} onChange={(e) => set('title', e.target.value)} /></Field>
               <Field label="Description" className="col-span-2"><textarea rows={2} className={inputCls()} value={f.description || ''} onChange={(e) => set('description', e.target.value)} /></Field>
-              <Field label="Assignee" bad={!f.assigned_to}><Select bad={!f.assigned_to} value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
+              <Field label="Assignee (main)" bad={!f.assigned_to}><Select bad={!f.assigned_to} value={f.assigned_to} onChange={(v) => set('assigned_to', v)} options={data.profiles.filter((p) => p.is_active).map((p) => [p.id, p.full_name || p.email])} /></Field>
               <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
               <Field label="Repeats"><Select value={f.frequency} onChange={(v) => set('frequency', v || 'daily')} options={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly']]} /></Field>
               {f.frequency === 'weekly' && <Field label="Weekday"><Select value={String(f.weekday == null ? 0 : f.weekday)} onChange={(v) => set('weekday', Number(v || 0))} options={days.map((d, i) => [String(i), d])} /></Field>}
               {f.frequency === 'monthly' && <Field label="Day of month"><input type="number" min="1" max="31" className={inputCls()} value={f.day_of_month || 1} onChange={(e) => set('day_of_month', e.target.value)} /></Field>}
               <Field label="Due time (Cairo)"><input type="time" className={inputCls()} value={f.due_time} onChange={(e) => set('due_time', e.target.value)} /></Field>
               <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
+              <Field label="Also give every task to" className="col-span-2">
+                <div className="flex flex-wrap gap-1.5">{data.profiles.filter((p) => p.is_active && p.id !== f.assigned_to).map((p) => { const on = (f.assigned_to_multi || []).includes(p.id); return <button type="button" key={p.id} onClick={() => set('assigned_to_multi', on ? f.assigned_to_multi.filter((x) => x !== p.id) : [...(f.assigned_to_multi || []), p.id])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-700'}`}>{on ? '✓ ' : ''}{p.full_name || p.email}</button>; })}</div>
+              </Field>
             </div>
           )}
         </Modal>

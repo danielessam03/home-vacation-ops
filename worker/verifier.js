@@ -592,7 +592,7 @@ export async function generateRecurringTasks(env) {
     || (t.frequency === 'monthly' && Math.min(t.day_of_month || 1, lastDom) === dom));
 
   const rows = due.map((t) => ({
-    title: t.title, description: t.description, task_type: t.task_type, assigned_to: t.assigned_to, created_by: t.created_by,
+    title: t.title, description: t.description, task_type: t.task_type, assigned_to: t.assigned_to, assigned_to_multi: t.assigned_to_multi || [], created_by: t.created_by,
     priority: t.priority || 'normal', status: 'todo', due_at: cairoToUtc(dateStr, t.due_time || '17:00:00').toISOString(),
     recurring_template_id: t.id, recurring_for_date: dateStr,
   }));

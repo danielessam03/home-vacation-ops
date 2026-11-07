@@ -8,16 +8,20 @@
       const { me, data, cfg, save, toast } = useApp();
       const [f, setF] = useState(task || { title: '', description: '', task_type: null, assigned_to: me.id, assigned_to_multi: [], priority: 'normal', due_at: null, listing_id: null, agency: null, ...(preset || {}) });
       const extra = (f.assigned_to_multi || []).filter((id) => id !== f.assigned_to);
+      const dueMoved = !!(task && task.due_at && (f.due_at || null) !== task.due_at);      // moving a saved due date needs a reason (the database insists)
+      const [dueReason, setDueReason] = useState('');
       const toggleExtra = (id) => set('assigned_to_multi', extra.includes(id) ? extra.filter((x) => x !== id) : [...extra, id]);
       const [busy, setBusy] = useState(false);
       const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const submit = async () => {
         if (!f.title.trim()) { toast('Title is required', 'error'); return; }
+        if (dueMoved && !dueReason.trim()) { toast('Say why the due date is being moved', 'error'); return; }
         setBusy(true);
         const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, assigned_to_multi: extra, priority: f.priority || 'normal', due_at: f.due_at, listing_id: f.listing_id, agency: f.agency };
         if (!task) payload.created_by = me.id;
+        if (dueMoved) payload.due_change_reason = dueReason.trim();
         const row = await save('tasks', payload, task ? task.id : null);
-        setBusy(false); if (row) { toast('Task saved'); onClose(); }
+        setBusy(false); if (row) { toast(dueMoved ? 'Due date moved — the managers have been told' : 'Task saved'); onClose(); }
       };
       return (
         <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>Save</Btn></>}>
@@ -28,6 +32,7 @@
             <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
             <Field label="Due"><input type="datetime-local" className={inputCls()} value={toLocalInput(f.due_at)} onChange={(e) => set('due_at', fromLocalInput(e.target.value))} /></Field>
             <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
+            {dueMoved && <Field label={`Why is the due date moving? (was ${fmtDateTime(task.due_at)})`} className="col-span-2" bad={!dueReason.trim()}><input className={inputCls(!dueReason.trim())} value={dueReason} onChange={(e) => setDueReason(e.target.value)} placeholder="Required — the managers are told" autoFocus /></Field>}
             <Field label="Linked listing (optional)"><Select value={f.listing_id} onChange={(v) => set('listing_id', v)} placeholder="None" options={data.listings.filter((l) => l.status !== 'archived').slice(0, 500).map((l) => [l.id, `${l.reference_code}${l.title ? ' · ' + l.title.slice(0, 30) : ''}`])} /></Field>
             <Field label="Agency (optional)"><Select value={f.agency} onChange={(v) => set('agency', v)} placeholder="None" options={data.agencies.map((a) => [a.name, a.display_name])} /></Field>
             <Field label={`Also give this task to${extra.length ? ` (${extra.length} more)` : ''}`} className="col-span-2">
@@ -80,6 +85,7 @@
             <div className="flex flex-wrap gap-1.5"><Badge className="bg-brand-50 text-brand-800">{titleCase(t.status)}</Badge><Badge className={PRIORITY[t.priority]}>{titleCase(t.priority)}</Badge>{t.task_type && <Badge>{titleCase(t.task_type)}</Badge>}</div>
             {t.description && <p className="whitespace-pre-wrap text-slate-700">{t.description}</p>}
             {t.rejection_reason && <div className="rounded bg-amber-50 p-2 text-amber-900">Last sent back: {t.rejection_reason}</div>}
+            {(t.due_history || []).length > 0 && <div className="rounded bg-slate-50 p-2 text-xs text-slate-700"><div className="mb-1 font-semibold">Due date moved {t.due_history.length} time{t.due_history.length === 1 ? '' : 's'}</div>{t.due_history.map((h, i) => <div key={i}>{fmtDateTime(h.from)} → {h.to ? fmtDateTime(h.to) : 'no date'} · {nameOf(h.by)} · {fmtDateTime(h.at)} — {h.reason}</div>)}</div>}
             <dl className="grid grid-cols-2 gap-2">
               {[[taskPeople(t).length > 1 ? 'Assignees' : 'Assignee', taskPeople(t).map(nameOf).join(', ')], ['Created by', nameOf(t.created_by)], ['Due', fmtDateTime(t.due_at)], ['Started', fmtDateTime(t.started_at)], ['Submitted', fmtDateTime(t.completed_at)], ['Approved', t.approved_at ? `${fmtDateTime(t.approved_at)} · ${nameOf(t.approved_by)}` : '—']].map(([k, v]) => <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>)}
             </dl>

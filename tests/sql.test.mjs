@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -333,6 +333,22 @@ ok('location + type change the prefix, same serial', r.rows[0].reference_code ==
 r = await db.query(`select code_history -> 0 ->> 'from' f0, code_history -> 1 ->> 'to' t1 from ops_listings where id='${RC}'`);
 ok('code history kept', r.rows[0].f0 === RCcode && r.rows[0].t1 === 'MG-V-' + RCserial + '-R', JSON.stringify(r.rows[0]));
 await expectErr('direct code edits are still blocked', `update ops_listings set reference_code='HD-A-1-S' where id='${RC}'`, /cannot be changed/);
+await asService();
+
+// moving a task's due date needs a reason and tells the managers (sql/022)
+await asUser(M);
+r = await db.query(`insert into ops_tasks (title,assigned_to,created_by,due_at) values ('Move me','${D1}','${M}', now() + interval '1 day') returning id`); const DM = r.rows[0].id;
+await asUser(D1);
+await expectErr('due date cannot move without a reason', `update ops_tasks set due_at = now() + interval '3 days' where id='${DM}'`, /why the due date/);
+await db.exec(`update ops_tasks set due_at = now() + interval '3 days', due_change_reason = 'owner travelling' where id='${DM}'`);
+r = await db.query(`select jsonb_array_length(due_history) h, due_history -> 0 ->> 'reason' reason, due_change_reason from ops_tasks where id='${DM}'`);
+ok('move recorded on the task, reason cleared', r.rows[0].h === 1 && r.rows[0].reason === 'owner travelling' && r.rows[0].due_change_reason === null, JSON.stringify(r.rows[0]));
+await asService();
+r = await db.query(`select target_role::text tr, target_user tu, title from ops_alerts where entity_id='${DM}' order by created_at, tu nulls first`);
+ok('managers and the creator are told', r.rows.length === 2 && r.rows.some((x) => x.tr === 'manager') && r.rows.some((x) => x.tu === M) && r.rows[0].title.startsWith('Due date moved'), JSON.stringify(r.rows));
+await asUser(D1);
+await db.exec(`update ops_tasks set status='doing' where id='${DM}'`);
+r = await db.query(`select jsonb_array_length(due_history) h from ops_tasks where id='${DM}'`); ok('other edits do not need a reason', r.rows[0].h === 1);
 await asService();
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

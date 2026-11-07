@@ -14,7 +14,7 @@
         const m = new Map(saved.map((s) => [s.id, s]));
         setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
       };
-      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
+      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks', a.entity_id); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
       return (
         <div>
           <PageHeader title="Alerts" sub="Raised hourly by the verifier worker">

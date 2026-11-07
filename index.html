@@ -55,7 +55,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.24.0';
+    const APP_VERSION = 'v1.25.0';
     const taskPeople = (t) => [...new Set([t.assigned_to, ...(t.assigned_to_multi || [])].filter(Boolean))];      // everyone a task is given to
     const onTask = (t, uid) => taskPeople(t).includes(uid);
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
@@ -1765,16 +1765,20 @@ Rules:
       const { me, data, cfg, save, toast } = useApp();
       const [f, setF] = useState(task || { title: '', description: '', task_type: null, assigned_to: me.id, assigned_to_multi: [], priority: 'normal', due_at: null, listing_id: null, agency: null, ...(preset || {}) });
       const extra = (f.assigned_to_multi || []).filter((id) => id !== f.assigned_to);
+      const dueMoved = !!(task && task.due_at && (f.due_at || null) !== task.due_at);      // moving a saved due date needs a reason (the database insists)
+      const [dueReason, setDueReason] = useState('');
       const toggleExtra = (id) => set('assigned_to_multi', extra.includes(id) ? extra.filter((x) => x !== id) : [...extra, id]);
       const [busy, setBusy] = useState(false);
       const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const submit = async () => {
         if (!f.title.trim()) { toast('Title is required', 'error'); return; }
+        if (dueMoved && !dueReason.trim()) { toast('Say why the due date is being moved', 'error'); return; }
         setBusy(true);
         const payload = { title: f.title.trim(), description: f.description || null, task_type: f.task_type, assigned_to: f.assigned_to, assigned_to_multi: extra, priority: f.priority || 'normal', due_at: f.due_at, listing_id: f.listing_id, agency: f.agency };
         if (!task) payload.created_by = me.id;
+        if (dueMoved) payload.due_change_reason = dueReason.trim();
         const row = await save('tasks', payload, task ? task.id : null);
-        setBusy(false); if (row) { toast('Task saved'); onClose(); }
+        setBusy(false); if (row) { toast(dueMoved ? 'Due date moved — the managers have been told' : 'Task saved'); onClose(); }
       };
       return (
         <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={submit} disabled={busy}>Save</Btn></>}>
@@ -1785,6 +1789,7 @@ Rules:
             <Field label="Type"><Select value={f.task_type} onChange={(v) => set('task_type', v)} options={(cfg.task_types || []).map((t) => [t, titleCase(t)])} /></Field>
             <Field label="Due"><input type="datetime-local" className={inputCls()} value={toLocalInput(f.due_at)} onChange={(e) => set('due_at', fromLocalInput(e.target.value))} /></Field>
             <Field label="Priority"><Select value={f.priority} onChange={(v) => set('priority', v || 'normal')} options={Object.keys(PRIORITY).map((p) => [p, titleCase(p)])} /></Field>
+            {dueMoved && <Field label={`Why is the due date moving? (was ${fmtDateTime(task.due_at)})`} className="col-span-2" bad={!dueReason.trim()}><input className={inputCls(!dueReason.trim())} value={dueReason} onChange={(e) => setDueReason(e.target.value)} placeholder="Required — the managers are told" autoFocus /></Field>}
             <Field label="Linked listing (optional)"><Select value={f.listing_id} onChange={(v) => set('listing_id', v)} placeholder="None" options={data.listings.filter((l) => l.status !== 'archived').slice(0, 500).map((l) => [l.id, `${l.reference_code}${l.title ? ' · ' + l.title.slice(0, 30) : ''}`])} /></Field>
             <Field label="Agency (optional)"><Select value={f.agency} onChange={(v) => set('agency', v)} placeholder="None" options={data.agencies.map((a) => [a.name, a.display_name])} /></Field>
             <Field label={`Also give this task to${extra.length ? ` (${extra.length} more)` : ''}`} className="col-span-2">
@@ -1837,6 +1842,7 @@ Rules:
             <div className="flex flex-wrap gap-1.5"><Badge className="bg-brand-50 text-brand-800">{titleCase(t.status)}</Badge><Badge className={PRIORITY[t.priority]}>{titleCase(t.priority)}</Badge>{t.task_type && <Badge>{titleCase(t.task_type)}</Badge>}</div>
             {t.description && <p className="whitespace-pre-wrap text-slate-700">{t.description}</p>}
             {t.rejection_reason && <div className="rounded bg-amber-50 p-2 text-amber-900">Last sent back: {t.rejection_reason}</div>}
+            {(t.due_history || []).length > 0 && <div className="rounded bg-slate-50 p-2 text-xs text-slate-700"><div className="mb-1 font-semibold">Due date moved {t.due_history.length} time{t.due_history.length === 1 ? '' : 's'}</div>{t.due_history.map((h, i) => <div key={i}>{fmtDateTime(h.from)} → {h.to ? fmtDateTime(h.to) : 'no date'} · {nameOf(h.by)} · {fmtDateTime(h.at)} — {h.reason}</div>)}</div>}
             <dl className="grid grid-cols-2 gap-2">
               {[[taskPeople(t).length > 1 ? 'Assignees' : 'Assignee', taskPeople(t).map(nameOf).join(', ')], ['Created by', nameOf(t.created_by)], ['Due', fmtDateTime(t.due_at)], ['Started', fmtDateTime(t.started_at)], ['Submitted', fmtDateTime(t.completed_at)], ['Approved', t.approved_at ? `${fmtDateTime(t.approved_at)} · ${nameOf(t.approved_by)}` : '—']].map(([k, v]) => <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>)}
             </dl>
@@ -2526,8 +2532,8 @@ Rules:
         en: ['The task board', 'Four columns: To do, Doing, Review, Done (on a phone, one tab per column). Overdue cards turn red; done tasks stay visible for 14 days. The name filter at the top shows “My tasks”, everyone or one person.'],
         ar: ['لوحة المهام', 'أربعة أعمدة: To do و Doing و Review و Done (على الموبايل تبويب لكل عمود). البطاقات المتأخرة تصبح حمراء، والمهام المنتهية تبقى ظاهرة 14 يوماً. فلتر الاسم بالأعلى يعرض «My tasks» أو الجميع أو شخصاً معيّناً.'] },
       { c: 'tasks', page: 'tasks', action: 'open-new-task', target: 'task-form',
-        en: ['New task', 'Give a title, a main assignee, type, due date and priority; link a listing or an agency if it is about one. “Also give this task to” adds more people — each of them sees it, can work it and gets the credit when it is approved. Every assignee receives the task by e-mail (and WhatsApp when switched on) with a link that opens it.'],
-        ar: ['مهمة جديدة', 'اكتب العنوان والمسؤول الرئيسي والنوع وموعد التسليم والأولوية، واربطها بوحدة أو وكالة إن كانت تخصها. خانة «Also give this task to» تضيف أشخاصاً آخرين — كل منهم يرى المهمة ويعمل عليها ويحصل على الرصيد عند اعتمادها. يستلم كل مسؤول المهمة بالإيميل (وواتساب عند تفعيله) مع رابط يفتحها مباشرة.'] },
+        en: ['New task', 'Give a title, a main assignee, type, due date and priority; link a listing or an agency if it is about one. “Also give this task to” adds more people — each of them sees it, can work it and gets the credit when it is approved. Moving a saved due date needs a reason: it is kept on the task and the managers get an alert. Every assignee receives the task by e-mail (and WhatsApp when switched on) with a link that opens it.'],
+        ar: ['مهمة جديدة', 'اكتب العنوان والمسؤول الرئيسي والنوع وموعد التسليم والأولوية، واربطها بوحدة أو وكالة إن كانت تخصها. خانة «Also give this task to» تضيف أشخاصاً آخرين — كل منهم يرى المهمة ويعمل عليها ويحصل على الرصيد عند اعتمادها. تغيير موعد تسليم محفوظ يحتاج سبباً: يُحفظ على المهمة ويصل تنبيه للمديرين. يستلم كل مسؤول المهمة بالإيميل (وواتساب عند تفعيله) مع رابط يفتحها مباشرة.'] },
       { c: 'tasks', page: 'tasks', target: 'task-board',
         en: ['Start → Review → Approve', 'Open a card: “Start”, then “Submit for review”. Only a manager can “Approve” it or “Send back” with a reason. On a computer you can also drag cards between columns. Done on time or late is counted in the KPIs and in HR.'],
         ar: ['ابدأ ← مراجعة ← موافقة', 'افتح البطاقة: «Start» ثم «Submit for review». المدير فقط يستطيع «Approve» أو «Send back» مع سبب. على الكمبيوتر يمكن سحب البطاقات بين الأعمدة. الإنجاز في الوقت أو التأخير يُحتسب في المؤشرات وفي نظام HR.'] },
@@ -2612,7 +2618,7 @@ Rules:
         const m = new Map(saved.map((s) => [s.id, s]));
         setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
       };
-      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks'); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
+      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks', a.entity_id); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
       return (
         <div>
           <PageHeader title="Alerts" sub="Raised hourly by the verifier worker">

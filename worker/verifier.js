@@ -276,6 +276,9 @@ export async function runVerifier(env) {
 
     if (!blocked) { try { await crawlProjects(env, known, run, errors); } catch (e) { errors.push(`projects: ${e.message}`); } }
 
+    if (!blocked) {    // pasted page links first: one fetch each, verified on this very run
+      try { await checkClaimedUrls(env); await checkClaimedUrls(env, { table: 'ops_projects', index: 'ops_wp_project_index', re: PROJECT_RE, label: 'Project ID' }); } catch (e) { errors.push(`claimed links: ${e.message}`); }
+    }
     run.listings_verified = await matchListings(env);
     run.listings_verified += await matchListings(env, { table: 'ops_projects', index: 'ops_wp_project_index', channel: false, label: 'project' });
     run.alerts_created = await raiseAlerts(env);
@@ -319,6 +322,32 @@ async function crawlProjects(env, known, run, errors) {
     await sb(env, 'ops_wp_project_index?on_conflict=reference_code', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: uniq });
   }
   if (crawlRows.length) await sb(env, 'ops_wp_crawl_log?on_conflict=url', { method: 'POST', prefer: 'resolution=merge-duplicates', body: crawlRows });
+}
+
+// The link staff pasted with "I uploaded it": open that exact page, read the code on it, and index it when it matches.
+// The result (ok / wrong code / not found) is written back for the screen. Verification itself happens in matchListings.
+async function checkClaimedUrls(env, { table = 'ops_listings', index = 'ops_wp_listing_index', re = REF_RE, label = 'File Ref' } = {}) {
+  const rows = await sbAll(env, `${table}?select=id,reference_code,claimed_url&status=eq.published_claimed&date_published_verified=is.null&claimed_url=not.is.null`);
+  let ok = 0;
+  for (const r of rows) {
+    let result; const url = String(r.claimed_url).trim();
+    try {
+      if (!/^https?:\/\//i.test(url)) throw new Error('not a web address');
+      const res = await wpFetch(`${url}${url.includes('?') ? '&' : '?'}hvv=${Date.now()}`);
+      if (res.status >= 500) continue;                                                   // site hiccup: try again next run
+      if (!res.ok) result = `the link answers HTTP ${res.status} (page not found or not published)`;
+      else {
+        const html = await res.text(); const ref = refFromText(html, re);
+        if (ref && ref.toUpperCase() === r.reference_code.toUpperCase()) {
+          await sb(env, `${index}?on_conflict=reference_code`, { method: 'POST', prefer: 'resolution=ignore-duplicates',
+            body: [{ reference_code: r.reference_code, url: url.split('?')[0], wp_published_at: publishedFromHtml(html), method: 'claimed-url', raw: {} }] });
+          result = 'ok'; ok++;
+        } else result = ref ? `the page shows ${label} ${ref}, not ${r.reference_code}` : `no ${label} found on that page`;
+      }
+    } catch (e) { if (e instanceof WpBlocked) throw e; result = `could not open the link: ${e.message}`; }
+    await sb(env, `${table}?id=eq.${r.id}`, { method: 'PATCH', body: { claimed_url_result: `${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC — ${result}` } });
+  }
+  return ok;
 }
 
 // A listing (or project) is verified_live when its reference code appears in the matching website index.

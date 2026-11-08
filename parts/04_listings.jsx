@@ -245,6 +245,27 @@
       );
     };
 
+    // "I uploaded it": the page link is optional, but with it the verifier checks that exact page on its next run.
+    const PublishedModal = ({ row, kind, onClose, onConfirm }) => {
+      const [url, setUrl] = useState(row.claimed_url || ''); const [busy, setBusy] = useState(false);
+      const clean = url.trim(); const badUrl = clean && !/^https?:\/\/\S+$/i.test(clean);
+      const first = row.status !== 'published_claimed';
+      return (
+        <Modal title={first ? 'I uploaded it — mark as published' : 'Website link'} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn disabled={busy || badUrl} onClick={async () => { setBusy(true); const ok = await onConfirm(clean || null); setBusy(false); if (ok) onClose(); }}>{first ? 'Mark as published' : 'Save link'}</Btn></>}>
+          <p className="mb-3 text-sm text-slate-600">Paste the page address on home-vacation.com. The verifier opens that exact page, reads the {kind === 'project' ? 'Project ID' : 'File Ref'} on it and confirms it is live — usually within 30 minutes — instead of waiting for the full crawl. Without a link it is still found by the crawl, only later.</p>
+          <Field label="Page link (optional)" bad={!!badUrl}><input className={inputCls(!!badUrl)} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://home-vacation.com/…" autoFocus /></Field>
+          <p className="mt-2 text-xs text-slate-500">The page must show {kind === 'project' ? 'Project ID' : 'File Ref'} <b className="font-mono">{row.reference_code}</b>.</p>
+        </Modal>
+      );
+    };
+    // what the verifier found at the pasted link
+    const ClaimedUrlNote = ({ row, onEdit }) => row.status === 'published_claimed' && (row.claimed_url || onEdit) ? (
+      <div className={`mt-3 rounded-lg p-2.5 text-sm ${row.claimed_url_result && !/— ok$/.test(row.claimed_url_result) ? 'bg-rose-100 text-rose-900' : 'bg-sky-50 text-sky-900'}`}>
+        {row.claimed_url ? <>Link posted: <a className="underline" href={row.claimed_url} target="_blank" rel="noreferrer">{row.claimed_url}</a>{row.claimed_url_result ? <div className="mt-1 text-xs">Verifier: {row.claimed_url_result}</div> : <div className="mt-1 text-xs">Waiting for the verifier to open it (every 30 minutes).</div>}</> : <>No page link posted — the crawl will find it, but a link is faster.</>}
+        {onEdit && <button className="ml-2 text-xs underline" onClick={onEdit}>{row.claimed_url ? 'Change link' : 'Add link'}</button>}
+      </div>
+    ) : null;
+
     // Admin only: change the three locked parts of a saved listing; the database gives the new code (same serial when it is free).
     const RecodeModal = ({ l, onClose }) => {
       const { me, cfg, reloadWhere, toast } = useApp();
@@ -281,7 +302,7 @@
     const ListingDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const l = data.listings.find((x) => x.id === id) || data.offline.find((x) => x.id === id); const off = !!(l && l.is_offline);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false); const [recode, setRecode] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false); const [recode, setRecode] = useState(false); const [pub, setPub] = useState(false);
       const channels = data.listing_channels.filter((c) => c.listing_id === id);
       const mgr = isMgr(me);
       useEffect(() => {
@@ -322,6 +343,7 @@
               <div className="flex flex-col items-end gap-1.5">{off && <Badge className="bg-slate-800 text-white">Offline</Badge>}<StatusBadge status={l.status} offline={off} />{!off && <SlaChip listing={l} />}</div>
             </div>
             {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(l.date_published_claimed)} but the verifier cannot find this File Ref on the website.</div>}
+            {!off && <ClaimedUrlNote row={l} onEdit={canEdit ? () => setPub(true) : null} />}
             {(() => { const pr = data.photo_requests.find((x) => x.listing_id === l.id && !['converted', 'cancelled'].includes(x.status)); return pr ? <button className="no-print mt-3 flex w-full items-center justify-between gap-2 rounded-lg bg-amber-100 p-2.5 text-left text-sm text-amber-900" onClick={() => go('photo')}><span>Waiting for photography — {photoNo(pr)} · {PHOTO_STATUS[pr.status][0]}{pr.assigned_to ? ` · ${nameOf(pr.assigned_to)}` : ''}</span><span className="whitespace-nowrap underline">Open the photography list</span></button> : null; })()}
             {l.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {l.hold_reason}</div>}
             {l.status === 'rejected' && <div className="mt-3 rounded-lg bg-rose-100 p-2.5 text-sm text-rose-900">Rejected: {l.rejection_reason}</div>}
@@ -334,7 +356,7 @@
               <div data-tour="listing-actions" className="no-print mt-4 flex flex-wrap gap-2">
                 {!['archived'].includes(l.status) && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
                 {l.status === 'draft' && <Btn disabled={l.completeness_pct < 100} title={l.completeness_pct < 100 ? 'Complete all required fields first' : ''} onClick={() => setStatus('ready_to_publish')}>{off ? 'Mark as ready' : 'Ready to publish'}</Btn>}
-                {l.status === 'ready_to_publish' && !off && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
+                {l.status === 'ready_to_publish' && !off && <Btn onClick={() => setPub(true)}>I uploaded it — mark as published</Btn>}
                 {l.status === 'ready_to_publish' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Back to draft</Btn>}
                 {['draft', 'ready_to_publish', 'published_claimed'].includes(l.status) && <Btn kind="ghost" onClick={() => setReason('hold')}>Put on hold</Btn>}
                 {l.status === 'on_hold' && <Btn onClick={() => setStatus(l.status_before_hold || 'draft')}>Resume (restart clock)</Btn>}
@@ -407,6 +429,7 @@
           {edit && <ListingForm listing={l} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
           {ai && <AiExportModal kind="listing" record={l} onClose={() => setAi(false)} />}
           {recode && <RecodeModal l={l} onClose={() => setRecode(false)} />}
+          {pub && <PublishedModal row={l} kind="listing" onClose={() => setPub(false)} onConfirm={async (url) => !!(l.status === 'published_claimed' ? await save('listings', { claimed_url: url, claimed_url_result: null }, l.id) : await setStatus('published_claimed', { claimed_url: url }))} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject listing" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>

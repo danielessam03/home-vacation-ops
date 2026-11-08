@@ -154,7 +154,7 @@
     const ProjectDetail = ({ id }) => {
       const { me, data, cfg, now, go, save, nameOf, toast } = useApp();
       const p = data.projects.find((x) => x.id === id);
-      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false);
+      const [edit, setEdit] = useState(false); const [reason, setReason] = useState(null); const [audit, setAudit] = useState(null); const [copied, setCopied] = useState(false); const [ai, setAi] = useState(false); const [pub, setPub] = useState(false);
       const mgr = isMgr(me);
       useEffect(() => {
         if (!mgr || !p) return;
@@ -180,6 +180,7 @@
               <div className="flex flex-col items-end gap-1.5"><StatusBadge status={p.status} /><SlaChip listing={p} slaCfg={cfg.project_sla_hours} /></div>
             </div>
             {s.claimedNotFound && <div className="mt-3 rounded-lg bg-rose-600 p-2.5 text-sm font-medium text-white">Claimed published {fmtDateTime(p.date_published_claimed)} but the verifier cannot find this Project ID on the website.</div>}
+            <ClaimedUrlNote row={p} onEdit={canEdit ? () => setPub(true) : null} />
             {p.status === 'on_hold' && <div className="mt-3 rounded-lg bg-amber-100 p-2.5 text-sm text-amber-900">On hold (SLA clock paused): {p.hold_reason}</div>}
             {p.status === 'rejected' && <div className="mt-3 rounded-lg bg-rose-100 p-2.5 text-sm text-rose-900">Rejected: {p.rejection_reason}</div>}
             <div className="mt-3">
@@ -191,7 +192,7 @@
               <div className="no-print mt-4 flex flex-wrap gap-2">
                 {p.status !== 'archived' && <Btn kind="ghost" onClick={() => setEdit(true)}>Edit fields</Btn>}
                 {p.status === 'draft' && <Btn disabled={p.completeness_pct < 100} onClick={() => setStatus('ready_to_publish')}>Ready to publish</Btn>}
-                {p.status === 'ready_to_publish' && <Btn onClick={() => setStatus('published_claimed')}>I uploaded it — mark as published</Btn>}
+                {p.status === 'ready_to_publish' && <Btn onClick={() => setPub(true)}>I uploaded it — mark as published</Btn>}
                 {p.status === 'ready_to_publish' && <Btn kind="ghost" onClick={() => setStatus('draft')}>Back to draft</Btn>}
                 {['draft', 'ready_to_publish', 'published_claimed'].includes(p.status) && <Btn kind="ghost" onClick={() => setReason('hold')}>Put on hold</Btn>}
                 {p.status === 'on_hold' && <Btn onClick={() => setStatus(p.status_before_hold || 'draft')}>Resume (restart clock)</Btn>}
@@ -239,6 +240,7 @@
           </div>
           {edit && <ProjectForm project={p} onClose={() => setEdit(false)} onSaved={() => setEdit(false)} />}
           {ai && <AiExportModal kind="project" record={p} onClose={() => setAi(false)} />}
+          {pub && <PublishedModal row={p} kind="project" onClose={() => setPub(false)} onConfirm={async (url) => !!(p.status === 'published_claimed' ? await save('projects', { claimed_url: url, claimed_url_result: null }, p.id) : await setStatus('published_claimed', { claimed_url: url }))} />}
           {reason === 'hold' && <ReasonModal title="Put on hold" label="Reason (mandatory) — the SLA clock pauses while on hold" confirmLabel="Put on hold" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('on_hold', { hold_reason: r })) setReason(null); }} />}
           {reason === 'reject' && <ReasonModal kind="danger" title="Reject project" label="Reason (mandatory)" confirmLabel="Reject" onClose={() => setReason(null)} onConfirm={async (r) => { if (await setStatus('rejected', { rejection_reason: r })) setReason(null); }} />}
         </div>

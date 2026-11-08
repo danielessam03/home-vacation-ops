@@ -17,6 +17,8 @@
     ops_listings: [
       { id: uid(), reference_code: 'HD-A-2001-S', title: 'Sea view flat', location: 'Hadaba', property_type: 'Apartment', deal_type: 'sale', status: 'draft', date_received: iso(10), created_at: iso(10), updated_at: iso(1),
         entered_by: U.data_entry, assigned_to: U.manager, completeness_pct: 60, missing_fields: ['price', 'currency'], facilities: [], is_offline: false, photography_done: true, code_history: [] },
+      { id: uid(), reference_code: 'MG-V-2002-R', title: 'Villa ready', location: 'Magawish', property_type: 'Villa', deal_type: 'rent', status: 'ready_to_publish', date_received: iso(30), date_ready: iso(2), created_at: iso(30), updated_at: iso(2),
+        entered_by: U.data_entry, assigned_to: U.manager, completeness_pct: 100, missing_fields: [], facilities: ['Pool'], is_offline: false, photography_done: true, code_history: [] },
     ],
     ops_tasks: [
       { id: uid(), title: 'Call the owner of HD-A-2001-S', description: 'Ask about the price', task_type: null, assigned_to: U.data_entry, assigned_to_multi: [U.marketing], created_by: U.admin, status: 'todo', priority: 'normal',

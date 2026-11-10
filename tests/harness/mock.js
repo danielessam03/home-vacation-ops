@@ -3,7 +3,8 @@
 (function () {
   const ROLE = '__ROLE__'; const SETTINGS = __SETTINGS__;
   const H = 36e5, now = Date.now(), iso = (h) => new Date(now - h * H).toISOString();
-  const U = { admin: '00000000-0000-0000-0000-00000000000a', manager: '00000000-0000-0000-0000-00000000000b', data_entry: '00000000-0000-0000-0000-00000000000c', marketing: '00000000-0000-0000-0000-00000000000d' };
+  const U = { admin: '00000000-0000-0000-0000-00000000000a', manager: '00000000-0000-0000-0000-00000000000b', data_entry: '00000000-0000-0000-0000-00000000000c', marketing: '00000000-0000-0000-0000-00000000000d', agency: '00000000-0000-0000-0000-0000000000b2' };
+  const AG1 = '00000000-0000-0000-0000-0000000000a1', AG2 = '00000000-0000-0000-0000-0000000000a2';
   const me = U[ROLE] || U.admin;
   let seq = 1; const uid = () => 'mock-' + (seq++).toString().padStart(4, '0') + '-0000-0000-0000-000000000000';
   const db = {
@@ -19,6 +20,20 @@
         entered_by: U.data_entry, assigned_to: U.manager, completeness_pct: 60, missing_fields: ['price', 'currency'], facilities: [], is_offline: false, photography_done: true, code_history: [] },
       { id: uid(), reference_code: 'MG-V-2002-R', title: 'Villa ready', location: 'Magawish', property_type: 'Villa', deal_type: 'rent', status: 'ready_to_publish', date_received: iso(30), date_ready: iso(2), created_at: iso(30), updated_at: iso(2),
         entered_by: U.data_entry, assigned_to: U.manager, completeness_pct: 100, missing_fields: [], facilities: ['Pool'], is_offline: false, photography_done: true, code_history: [] },
+    ],
+    ops_agencies: [
+      { id: AG1, name: 'izmi', display_name: 'IZMI', is_active: true, currency: 'EGP', scope_notes: 'SEO' },
+      { id: AG2, name: 'london_marketing_studios', display_name: 'London Marketing Studios', is_active: true, currency: 'GBP', scope_notes: 'Social media & paid ads' },
+    ],
+    ops_agency_users: [
+      { id: '00000000-0000-0000-0000-0000000000b1', agency_id: AG1, email: 'ahmed@izmi.test', full_name: 'Ahmed', status: 'pending', created_at: iso(3) },
+      { id: U.agency, agency_id: AG1, email: 'sara@izmi.test', full_name: 'Sara', status: 'active', created_at: iso(50) },
+    ],
+    ops_content_items: [
+      { id: uid(), agency_id: AG1, kind: 'file', title: 'HD-A-2001-S photos', file_name: 'HD-A-2001-S.zip', file_path: AG1 + '/x/HD-A-2001-S.zip', file_size: 12345678, post_by: null, scheduled_date: null, posted_url: null, notes: 'Highlight the sea view', created_at: iso(5), updated_at: iso(5), added_by: U.marketing },
+      { id: uid(), agency_id: AG1, kind: 'link', title: 'MG-V-2002-R — Villa ready', link_url: 'https://home-vacation.com/x', scheduled_date: new Date(now - 24 * H).toISOString().slice(0, 10), posted_url: null, created_at: iso(40), updated_at: iso(30), added_by: U.marketing, scheduled_by: U.agency },
+      { id: uid(), agency_id: AG1, kind: 'link', title: 'Reel — Sahl Hasheesh', link_url: 'https://home-vacation.com/y', scheduled_date: new Date(now).toISOString().slice(0, 10), posted_url: 'https://instagram.com/p/1', posted_at: iso(1), posted_by: U.agency, created_at: iso(60), updated_at: iso(1), added_by: U.marketing, scheduled_by: U.agency },
+      { id: uid(), agency_id: AG2, kind: 'file', title: 'Brochure Q4', file_name: 'q4.zip', file_path: AG2 + '/y/q4.zip', file_size: 500000, scheduled_date: new Date(now + 48 * H).toISOString().slice(0, 10), posted_url: null, created_at: iso(2), updated_at: iso(2), added_by: U.manager },
     ],
     ops_tasks: [
       { id: uid(), title: 'Call the owner of HD-A-2001-S', description: 'Ask about the price', task_type: null, assigned_to: U.data_entry, assigned_to_multi: [U.marketing], created_by: U.admin, status: 'todo', priority: 'normal',
@@ -60,15 +75,17 @@
     }
     then(res, rej) { let r; try { r = { data: this.run(), error: null }; } catch (e) { r = { data: null, error: e }; } return Promise.resolve(r).then(res, rej); }
   }
-  const sess = { user: { id: me, email: db.ops_profiles.find((p) => p.id === me).email } };
+  const prof = db.ops_profiles.find((p) => p.id === me); const sess = { user: { id: me, email: prof ? prof.email : 'sara@izmi.test' } };
   window.supabase = { createClient() { return {
     rpc: (fn, args) => {
       if (fn === 'hv_my_systems') return Promise.resolve({ data: { hr: true, maint: true, crm: false, ops: true }, error: null });
+      if (fn === 'ops_agency_list') return Promise.resolve({ data: db.ops_agencies.map((a) => ({ id: a.id, display_name: a.display_name })), error: null });
       if (fn === 'hv_alert_counts') return Promise.resolve({ data: {}, error: null });
       if (fn === 'ops_recode_listing') { const l = db.ops_listings.find((x) => x.id === args.p_id); Object.assign(l, { location: args.p_location, property_type: args.p_property_type, deal_type: args.p_deal_type, reference_code: 'MG-V-2001-' + (args.p_deal_type === 'rent' ? 'R' : 'S'), code_history: [{ from: 'HD-A-2001-S', to: 'MG-V-2001-R', at: new Date().toISOString(), by: me, reason: args.p_reason }] }); return Promise.resolve({ data: l, error: null }); }
       return Promise.resolve({ data: null, error: null });
     },
     from: (t) => new Q(t),
+    storage: { from: () => ({ upload: async () => ({ data: {}, error: null }), createSignedUrl: async () => ({ data: { signedUrl: 'about:blank' }, error: null }), remove: async () => ({ data: [], error: null }) }) },
     auth: { getSession: () => Promise.resolve({ data: { session: sess } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({}), signInWithPassword: () => Promise.resolve({ error: null }) },
   }; } };
   window.__mockDb = db;

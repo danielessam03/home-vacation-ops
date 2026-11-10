@@ -3,7 +3,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.28.1';
+    const APP_VERSION = 'v1.29.0';
     const taskPeople = (t) => [...new Set([t.assigned_to, ...(t.assigned_to_multi || [])].filter(Boolean))];      // everyone a task is given to
     const onTask = (t, uid) => taskPeople(t).includes(uid);
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
@@ -164,6 +164,11 @@
       more: 'M5 12h.01M12 12h.01M19 12h.01', offline: 'M4 20V9l8-5 8 5v11zM9 20v-6h6v6M3 3l18 18', project: 'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 10h.01M15 10h.01', camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z', spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z', plus: 'M12 5v14M5 12h14', x: 'M6 6l12 12M18 6L6 18', copy: 'M9 9h10v11H9zM5 15V4h10', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
       check: 'M5 12l5 5 9-10', back: 'M15 5l-7 7 7 7', upload: 'M12 16V4M7 9l5-5 5 5M4 20h16', print: 'M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
     };
+    Object.assign(ICONS, {    // v1.29: content calendar
+      calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+      file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
+      download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+    });
     const Icon = ({ name, className = 'w-5 h-5' }) => (
       <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={ICONS[name] || ''} /></svg>
     );

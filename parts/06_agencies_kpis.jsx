@@ -1,6 +1,6 @@
 
     // =========================================================================================
-    // AGENCIES — no agency logins; our staff log their deliverables and numbers
+    // AGENCIES — scorecards (our staff log deliverables and numbers) + the content calendar (06b; an agency login sees only that)
     // =========================================================================================
     const DeliverableForm = ({ agency, month, item, onClose }) => {
       const { me, cfg, save, toast } = useApp();
@@ -78,6 +78,7 @@
       return (
         <div>
           <PageHeader title="Agencies" sub="Contract scorecards — the renewal document"><MonthPicker value={month} onChange={setMonth} /><Btn kind="ghost" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />Print</Btn></PageHeader>
+          {mgr && <div className="mb-4"><AgencyAccountsCard compact /></div>}
           <div data-tour="agency-tabs"><Tabs value={agency.id} onChange={setAid} tabs={agencies.map((a) => [a.id, a.display_name])} /></div>
           <div className="space-y-4">
             <Card className="p-4">
@@ -88,6 +89,8 @@
               <div className="mt-2 text-sm text-slate-600">Contact: {agency.contact_person || '—'}{agency.contact_email ? ` · ${agency.contact_email}` : ''}{agency.contact_phone ? ` · ${agency.contact_phone}` : ''}</div>
               {me.role === 'admin' && <p className="no-print mt-1 text-xs text-slate-400">Edit the contract in Settings → Agencies.</p>}
             </Card>
+
+            <ContentCalendar agency={agency} items={data.content_items.filter((c) => c.agency_id === agency.id)} staff={canWrite} />
 
             <div data-tour="agency-tiles" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Tile label={`Delivery rate${delta('delivery_rate') != null ? ` (${delta('delivery_rate') >= 0 ? '+' : ''}${delta('delivery_rate')} vs prev)` : ''}`} value={sc.delivery_rate == null ? null : `${sc.delivery_rate}%`} />

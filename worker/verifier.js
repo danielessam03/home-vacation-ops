@@ -441,6 +441,15 @@ async function raiseAlerts(env) {
     }
   }
 
+  // content calendar (sql/027): an item whose planned day or "post by" deadline passed without a post link
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  const lateContent = await sbAll(env, `ops_content_items?select=id,title,agency_id,scheduled_date,post_by&posted_url=is.null&or=(scheduled_date.lt.${todayYmd},post_by.lt.${todayYmd})`);
+  if (lateContent.length) {
+    const ags = await sb(env, 'ops_agencies?select=id,display_name'); const agName = Object.fromEntries(ags.map((a) => [a.id, a.display_name]));
+    for (const c of lateContent) alerts.push({ entity_type: 'content', entity_id: c.id, level: 'warning', title: `Not posted — ${agName[c.agency_id] || 'agency'}: ${c.title}`,
+      body: `${c.scheduled_date ? `Planned for ${c.scheduled_date}` : 'No day planned'}${c.post_by ? `, post by ${c.post_by}` : ''} — no post link yet.`, target_role: 'manager', dedupe_key: `content_late:${c.id}:${c.scheduled_date || c.post_by}` });
+  }
+
   const nowIso = new Date().toISOString();
   const tasks = await sbAll(env, `ops_tasks?select=id,title,assigned_to,assigned_to_multi,due_at&status=in.(todo,doing)&due_at=lt.${nowIso}`);
   for (const t of tasks) {

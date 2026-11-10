@@ -14,7 +14,7 @@
         const m = new Map(saved.map((s) => [s.id, s]));
         setData((d) => ({ ...d, alerts: d.alerts.map((a) => m.get(a.id) || a) }));
       };
-      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks', a.entity_id); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
+      const openAlert = (a) => { mark([a.id]); if (a.entity_type === 'content') go('agencies'); else if (a.entity_type === 'listing') go('listing', a.entity_id); else if (a.entity_type === 'project') go('project', a.entity_id); else if (a.entity_type === 'task') go('tasks', a.entity_id); else if (a.entity_type === 'agency_deliverable') go('agencies'); };
       return (
         <div>
           <PageHeader title="Alerts" sub="Raised hourly by the verifier worker">
@@ -230,7 +230,7 @@
           )}
           {tab === 'lists' && <div className="space-y-4"><ListEditor settingKey="facilities" title="Facilities / amenities" hint="Staff can still type a one-off facility on a listing." /><ListEditor settingKey="view_types" title="View types" /><ListEditor settingKey="project_types" title="Project — unit types" /><ListEditor settingKey="finishing_types" title="Project — finishing options" /><ListEditor settingKey="age_ranges" title="Buyer persona age ranges" /><ListEditor settingKey="currencies" title="Currencies" hint="Amounts are never converted." /><ListEditor settingKey="task_types" title="Task types" hint="photo_shoot and video_shoot count as “shoots completed”." /><ListEditor settingKey="deliverable_item_types" title="Agency deliverable types" /><AiPromptEditor /></div>}
           {tab === 'metrics' && <MetricDefsEditor />}
-          {tab === 'agencies' && <div className="space-y-4">{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
+          {tab === 'agencies' && <div className="space-y-4"><AgencyAccountsCard />{data.agencies.map((a) => <AgencyContractForm key={a.id} agency={a} />)}</div>}
           {tab === 'verifier' && <VerifierTab />}
           </div>
         </div>
@@ -266,6 +266,7 @@
     };
 
     const Login = ({ onReconfigure, notice }) => {
+      const [apply, setApply] = useState(false);
       const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(notice || ''); const [busy, setBusy] = useState(false);
       const submit = async (e) => {
         e.preventDefault(); setBusy(true); setErr('');
@@ -278,6 +279,7 @@
         const { error } = await sbc.auth.signInWithPassword({ email: loginEmail, password });
         setBusy(false); if (error) setErr(error.message);
       };
+      if (apply) return <AgencyApply onBack={() => setApply(false)} />;
       return (
         <Shell>
           <form onSubmit={submit} className="space-y-3">
@@ -287,6 +289,7 @@
             <button type="submit" disabled={busy} className="w-full rounded-lg bg-brand-700 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">{busy ? 'Signing in…' : 'Sign in'}</button>
           </form>
           <p className="mt-4 text-center text-xs text-slate-400">Same username and password as HR, Maintenance and the CRM.</p>
+          <button type="button" className="mt-2 w-full text-center text-xs text-brand-700 underline" onClick={() => setApply(true)}>Marketing agency? Request an account</button>
           {!hasBuiltInConfig && <button className="mt-1 w-full text-center text-xs text-slate-400 underline" onClick={onReconfigure}>Reconfigure connection</button>}
         </Shell>
       );
@@ -300,6 +303,7 @@
       recurring_templates: { order: 'created_at' }, agencies: { order: 'display_name' }, agency_deliverables: { order: 'due_date' }, agency_metrics: { order: 'period_month', desc: true },
       kpi_targets: { order: 'period_month', desc: true }, alerts: { order: 'created_at', desc: true, max: 300 }, settings: { order: 'key' }, report_snapshots: { order: 'created_at', desc: true, max: 100 },
       verifier_runs: { order: 'started_at', desc: true, max: 25 }, projects: { order: 'date_received', desc: true }, photo_requests: { order: 'created_at', desc: true },
+      content_items: { order: 'created_at', desc: true }, agency_users: { order: 'created_at', desc: true },
     };
     const EMPTY = Object.fromEntries(Object.keys(TABLES).map((t) => [t, []]));
 
@@ -321,7 +325,7 @@
 
     const App = () => {
       const [connected, setConnected] = useState(() => initSupabase());
-      const [session, setSession] = useState(undefined); const [me, setMe] = useState(null); const [notice, setNotice] = useState('');
+      const [session, setSession] = useState(undefined); const [me, setMe] = useState(null); const [notice, setNotice] = useState(''); const [agencyUser, setAgencyUser] = useState(null);
       const [rawData, setData] = useState(EMPTY);
       // offline properties live in the same table but are a separate world: every page built on data.listings never sees them
       const data = useMemo(() => ({ ...rawData, listings: rawData.listings.filter((l) => !l.is_offline), offline: rawData.listings.filter((l) => l.is_offline) }), [rawData]); const [loading, setLoading] = useState(false); const [loadError, setLoadError] = useState('');
@@ -368,10 +372,14 @@
 
       const uid = session && session.user.id;
       useEffect(() => {
-        if (!uid) { setMe(null); setData(EMPTY); return; }
+        if (!uid) { setMe(null); setAgencyUser(null); setData(EMPTY); return; }
         (async () => {
           setLoading(true); setLoadError('');
           const { data: prof, error } = await sbc.from(tbl('profiles')).select('*').eq('id', uid).maybeSingle();
+          if (!error && !prof) {        // not an HR login — an agency account (sql/027)? it sees only its own portal
+            const { data: ag } = await sbc.from(tbl('agency_users')).select('*').eq('id', uid).maybeSingle();
+            if (ag) { setAgencyUser(ag); setLoading(false); return; }
+          }
           if (error || !prof || !prof.is_active) {
             setNotice(error ? friendlyError(error) : 'Your login works, but HV Ops is not switched on for you. Ask HR to tick “HV Ops” on your login (HR → Users).');
             await sbc.auth.signOut(); setLoading(false); return;
@@ -460,6 +468,7 @@
       if (!connected) return <ConnectScreen onDone={() => setConnected(true)} />;
       if (session === undefined) return <div id="boot">Loading HV Ops…</div>;
       if (!session) return <Login notice={notice} onReconfigure={() => { try { localStorage.removeItem('hvops_sb_url'); localStorage.removeItem('hvops_sb_key'); } catch (e) {} sbc = null; setConnected(false); }} />;
+      if (agencyUser) return agencyUser.status === 'active' && agencyUser.agency_id ? <AgencyPortal key={agencyUser.id} user={agencyUser} /> : <AgencyWaiting user={agencyUser} />;
       if (loadError) return <Shell><p className="text-sm text-rose-700">{loadError}</p><Btn className="mt-3 w-full" kind="ghost" onClick={() => sbc.auth.signOut()}>Sign out</Btn></Shell>;
       if (loading || !me) return <div id="boot">Loading your workspace…</div>;
 

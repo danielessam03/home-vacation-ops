@@ -23,7 +23,7 @@ await db.exec(`
   create table public.hv_task_types (id bigint primary key, title text);
   alter table public.app_users enable row level security;
   create policy self_only on public.app_users for select to authenticated using (id = auth.uid());
-  create table public.employees (id uuid primary key default gen_random_uuid(), user_id uuid, status text default 'active');
+  create table public.employees (id uuid primary key default gen_random_uuid(), user_id uuid references public.app_users(id), status text default 'active', created_at timestamptz default now());
   create table public.kpi_metrics (id uuid primary key default gen_random_uuid(), code text unique not null, name_en text, name_ar text, points_per_unit numeric default 1,
     value_points_per_million numeric default 0, has_value boolean default false, is_active boolean default true, sort int default 0,
     category text not null default 'sales', constraint kpi_metrics_category_check check (category in ('sales','general')));
@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '027_agency_portal.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '027_agency_portal.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -351,6 +351,50 @@ ok('managers and the creator are told', r.rows.length === 2 && r.rows.some((x) =
 await asUser(D1);
 await db.exec(`update ops_tasks set status='doing' where id='${DM}'`);
 r = await db.query(`select jsonb_array_length(due_history) h from ops_tasks where id='${DM}'`); ok('other edits do not need a reason', r.rows[0].h === 1);
+await asService();
+
+
+// ---- agency accounts + content calendar (sql/027)
+await asService();
+const AGU = '00000000-0000-0000-0000-0000000000a1';
+r = await db.query(`select id from ops_agencies where name='izmi'`); const IZMI = r.rows[0].id;
+r = await db.query(`select id from ops_agencies where name='london_marketing_studios'`); const LMS = r.rows[0].id;
+// a stand-in for HR's own sign-up trigger: it runs first (alphabetically) and makes every sign-up a pending HR user
+await db.exec(`create or replace function public.stub_hr_signup() returns trigger language plpgsql as $f$ begin insert into public.app_users (id,email,is_active) values (new.id,new.email,true); insert into public.employees (user_id) values (new.id); return new; end $f$;
+  drop trigger if exists trg_on_auth_user_created on auth.users; create trigger trg_on_auth_user_created after insert on auth.users for each row execute function public.stub_hr_signup();
+  insert into auth.users (id,email,raw_user_meta_data) values ('${AGU}','ahmed@izmi.test','{"hv_kind":"agency","agency_id":"${IZMI}","full_name":"Ahmed"}'::jsonb)`);
+r = await db.query(`select (select status from ops_agency_users where id='${AGU}') st, (select agency_id from ops_agency_users where id='${AGU}') ag, (select count(*) from app_users where id='${AGU}')::int hr, (select count(*) from employees where user_id='${AGU}')::int emp`);
+ok('agency sign-up: pending agency login, no HR user and no employee card left behind', r.rows[0].st === 'pending' && r.rows[0].ag === IZMI && r.rows[0].hr === 0 && r.rows[0].emp === 0, JSON.stringify(r.rows[0]));
+await db.exec(`insert into auth.users (id,email,raw_user_meta_data) values ('00000000-0000-0000-0000-0000000000a2','staff2@x.com','{"full_name_en":"Normal"}'::jsonb)`);
+r = await db.query(`select (select count(*) from app_users where id='00000000-0000-0000-0000-0000000000a2')::int hr, (select count(*) from ops_agency_users where id='00000000-0000-0000-0000-0000000000a2')::int ag`);
+ok('a normal HR sign-up is left alone', r.rows[0].hr === 1 && r.rows[0].ag === 0, JSON.stringify(r.rows[0]));
+await asUser(MK);
+r = await db.query(`insert into ops_content_items (agency_id,kind,title,file_path,file_name,added_by) values ('${IZMI}','file','HD-A-2001-S photos','${IZMI}/x/a.zip','a.zip','${MK}') returning id`); const CI = r.rows[0].id;
+await db.exec(`insert into ops_content_items (agency_id,kind,title,link_url,added_by) values ('${LMS}','link','Other agency item','https://x/y','${MK}')`);
+await asUser(AGU);
+r = await db.query(`select count(*)::int n from ops_content_items`); ok('a pending agency login sees nothing', r.rows[0].n === 0);
+await db.exec(`update ops_agency_users set status='active' where id='${AGU}'`);
+await asService(); r = await db.query(`select status from ops_agency_users where id='${AGU}'`); ok('a pending agency login cannot approve itself', r.rows[0].status === 'pending');
+await asUser(M); await db.exec(`update ops_agency_users set status='active', decided_by='${M}', decided_at=now() where id='${AGU}'`);
+await asUser(AGU);
+r = await db.query(`select title from ops_content_items order by 1`); ok('approved: the agency sees only its own items', r.rows.length === 1 && r.rows[0].title === 'HD-A-2001-S photos', JSON.stringify(r.rows));
+r = await db.query(`select display_name from ops_agencies`); ok('…and only its own agency row', r.rows.length === 1 && r.rows[0].display_name === 'IZMI', JSON.stringify(r.rows));
+r = await db.query(`select count(*)::int n from ops_listings`); ok('…and none of the listings', r.rows[0].n === 0);
+await expectErr('the agency cannot change the material', `update ops_content_items set title='x' where id='${CI}'`, /only plan the day/);
+await expectErr('the agency cannot add items', `insert into ops_content_items (agency_id,kind,title) values ('${IZMI}','link','mine')`, /row-level security/i);
+await db.exec(`update ops_content_items set scheduled_date = current_date - 1 where id='${CI}'`);
+r = await db.query(`select scheduled_by, scheduled_at is not null sa, ops_content_state(c.*) st from ops_content_items c where id='${CI}'`);
+ok('planned on a past day without a link = late, stamped with the agency login', r.rows[0].scheduled_by === AGU && r.rows[0].sa && r.rows[0].st === 'late', JSON.stringify(r.rows[0]));
+await db.exec(`update ops_content_items set posted_url='https://instagram.com/p/1' where id='${CI}'`);
+r = await db.query(`select posted_by, posted_at is not null pa, ops_content_state(c.*) st from ops_content_items c where id='${CI}'`);
+ok('post link => posted (green), stamped', r.rows[0].posted_by === AGU && r.rows[0].pa && r.rows[0].st === 'posted', JSON.stringify(r.rows[0]));
+await asService();
+r = await db.query(`select target_role::text tr, title from ops_alerts where entity_type='content' and entity_id='${CI}' order by 1`);
+ok('managers and marketing are told about the post', r.rows.length === 2 && r.rows[0].tr === 'manager' && r.rows[1].tr === 'marketing' && r.rows[0].title.startsWith('Posted — IZMI'), JSON.stringify(r.rows));
+await asUser(D1); r = await db.query(`select count(*)::int n from ops_content_items`); ok("staff see every agency's items", r.rows[0].n === 2);
+await expectErr('data entry cannot add content', `insert into ops_content_items (agency_id,kind,title,added_by) values ('${IZMI}','link','x','${D1}')`, /row-level security/i);
+await asUser(M); await db.exec(`update ops_agency_users set status='disabled' where id='${AGU}'`); await asUser(AGU);
+r = await db.query(`select count(*)::int n from ops_content_items`); ok('a disabled agency login sees nothing again', r.rows[0].n === 0);
 await asService();
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -266,7 +266,7 @@
     };
 
     const Login = ({ onReconfigure, notice }) => {
-      const [apply, setApply] = useState(false);
+      const [apply, setApply] = useState(() => /^#agency/i.test(location.hash));   // the link sent to agencies: <app>/#agency opens the request form directly
       const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(notice || ''); const [busy, setBusy] = useState(false);
       const submit = async (e) => {
         e.preventDefault(); setBusy(true); setErr('');

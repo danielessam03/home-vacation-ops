@@ -53,7 +53,7 @@
       const rows = table(this.t); let out;
       if (this.op === 'insert' || this.op === 'upsert') {
         const list = Array.isArray(this.v) ? this.v : [this.v];
-        out = list.map((v) => { const r = { id: uid(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...v }; if (this.t === 'ops_listings' && !r.reference_code) r.reference_code = (r.is_offline ? 'OFF-' : '') + 'HD-A-' + (2100 + seq) + (r.deal_type === 'rent' ? '-R' : '-S'); if (this.t === 'ops_listings') { r.completeness_pct = r.completeness_pct || 50; r.missing_fields = r.missing_fields || ['price']; } if (this.t === 'ops_tasks') { r.status = r.status || 'todo'; r.due_history = r.due_history || []; } rows.unshift(r); return r; });
+        out = list.map((v) => { const r = { id: uid(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...v }; if (this.t === 'ops_listings' && !r.reference_code) r.reference_code = (r.is_offline ? 'OFF-' : '') + 'HD-A-' + (2100 + seq) + (r.deal_type === 'rent' ? '-R' : '-S'); if (this.t === 'ops_listings') { r.completeness_pct = r.completeness_pct || 50; r.missing_fields = r.missing_fields || ['price']; } if (this.t === 'ops_tasks') { r.status = r.status || 'todo'; r.due_history = r.due_history || []; } if (this.t === 'ops_content_items' && ROLE === 'agency') { r.added_by_agency = me; r.added_by = null; } rows.unshift(r); return r; });
       } else if (this.op === 'update') {
         out = rows.filter((r) => this.f.every((fn) => fn(r))).map((r) => {
           if (this.t === 'ops_tasks' && 'due_at' in this.v && r.due_at && this.v.due_at !== r.due_at) {       // mirror the database rule (sql/022)

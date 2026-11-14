@@ -31,11 +31,12 @@
     const ContentChip = ({ item, state, onClick, draggable, onDragStart, onDragEnd, picked }) => (
       <button type="button" draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} title={item.title}
         className={`flex w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-xs font-medium ${CONTENT_STATE[state][1]} ${picked ? 'ring-2 ring-brand-500 ring-offset-1' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}>
-        <Icon name={item.kind === 'file' ? 'file' : 'link'} className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{item.title}</span>
+        <Icon name={item.kind === 'file' ? 'file' : item.link_url ? 'link' : 'calendar'} className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{item.title}</span>
       </button>
     );
 
-    // staff: add zip files / links, plan, report, delete · asAgency: plan the day + paste the post link
+    // staff: add zip files / links / titles, plan, report, delete · asAgency: plan the day + paste the post link,
+    // and add its own items (files, a link or only a title — sql/028; those it may also delete while not posted)
     const ContentCalendar = ({ agency, items, staff, asAgency }) => {
       const { save, toast, now } = useApp();
       const today = dayKey(now);
@@ -55,14 +56,14 @@
         <Card data-tour="agency-calendar" className="p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div><h3 className="text-sm font-semibold text-brand-800">Content calendar{agency && !asAgency ? ` — ${agency.display_name}` : ''}</h3>
-              <p className="text-xs text-slate-500">{asAgency ? 'Drag each item onto the day you will post it. Once it is up, open it and paste the post link.' : 'Add the material; the agency plans the day and reports the post link.'}</p></div>
+              <p className="text-xs text-slate-500">{asAgency ? 'Drag each item onto the day you will post it. Once it is up, open it and paste the post link. “Add content” puts your own items here — files, a link or just a title.' : 'Add the material; the agency plans the day, reports the post link and can add its own items.'}</p></div>
             <div className="no-print flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white">
                 <button className="px-2.5 py-2 text-slate-600" onClick={() => setWeek(addD(week, -7))} aria-label="Previous week">‹</button>
                 <button className="min-w-[10rem] px-1 text-center text-sm font-medium" title="This week" onClick={() => setWeek(mondayOf(now))}>{dayLabel(days[0]).replace(/ \d{4}$/, '')} – {dayLabel(days[6])}</button>
                 <button className="px-2.5 py-2 text-slate-600" onClick={() => setWeek(addD(week, 7))} aria-label="Next week">›</button>
               </div>
-              {staff && <Btn className="!py-1.5" onClick={() => setAdd(true)}><Icon name="plus" className="h-4 w-4" />Add content</Btn>}
+              {(staff || asAgency) && agency && <Btn className="!py-1.5" onClick={() => setAdd(true)}><Icon name="plus" className="h-4 w-4" />Add content</Btn>}
             </div>
           </div>
           <div className="mb-3 flex flex-wrap gap-1.5 text-xs">{Object.entries(CONTENT_STATE).map(([k, [l, c]]) => <span key={k} className={`rounded-full border px-2 py-0.5 ${c}`}>{l} · {k === 'pool' ? pool.length : k === 'late' ? lateAll : `${n(k)} this week`}</span>)}</div>
@@ -77,7 +78,7 @@
                 </div>))}</div>
             </div>
           )}
-          {!items.length && <Empty>{staff ? 'Nothing here yet — “Add content” puts zip files or links on the list for the agency.' : 'Nothing to post yet — Home & Vacation will add the material here.'}</Empty>}
+          {!items.length && <Empty>{staff ? 'Nothing here yet — “Add content” puts zip files or links on the list for the agency.' : 'Nothing here yet — Home & Vacation will add material, and “Add content” puts your own items on the calendar.'}</Empty>}
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">{days.map((k, idx) => {
             const its = items.filter((i) => i.scheduled_date === k); const isToday = k === today;
@@ -90,7 +91,7 @@
               </div>);
           })}</div>
           {current && <ContentItemModal item={current} agency={agency} staff={staff} asAgency={asAgency} onClose={() => setOpen(null)} />}
-          {add && <AddContentModal agency={agency} onClose={() => setAdd(false)} />}
+          {add && <AddContentModal agency={agency} asAgency={asAgency} onClose={() => setAdd(false)} />}
         </Card>
       );
     };
@@ -102,6 +103,8 @@
       const who = (id) => { if (!id) return '—'; if (id === me.id) return 'you'; const au = (data.agency_users || []).find((u) => u.id === id); return au ? (au.full_name || au.email) : asAgency ? 'Home & Vacation' : nameOf(id); };
       const badUrl = url.trim() && !/^https?:\/\/\S+$/i.test(url.trim());
       const canPlan = staff || asAgency;
+      const canDelete = staff || (asAgency && item.added_by_agency && !item.posted_url);     // the agency removes only what it added itself, while not posted
+      const addedBy = item.added_by_agency ? (item.added_by_agency === me.id ? 'you' : asAgency ? 'your agency' : who(item.added_by_agency)) : asAgency ? 'Home & Vacation' : who(item.added_by);
       const setPosted = async (v) => { setBusy(true); const ok = await save('content_items', { posted_url: v }, item.id); setBusy(false); if (ok) toast(v ? 'Marked as posted ✓' : 'Post link removed'); };
       const del = async () => {
         if (!window.confirm(`Delete “${item.title}”?`)) return;
@@ -112,14 +115,14 @@
         setData((d) => ({ ...d, content_items: d.content_items.filter((c) => c.id !== item.id) })); setBusy(false); onClose();
       };
       return (
-        <Modal title={item.title} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Close</Btn>{staff && <Btn kind="danger" disabled={busy} onClick={del}>Delete</Btn>}</>}>
-          <div className="mb-3 flex flex-wrap items-center gap-2"><Badge className={CONTENT_STATE[state][1]}>{CONTENT_STATE[state][0]}</Badge>{item.post_by && <span className="text-xs text-slate-600">Post by {fmtDate(item.post_by)}</span>}{agency && !asAgency && <span className="text-xs text-slate-500">{agency.display_name}</span>}</div>
+        <Modal title={item.title} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose}>Close</Btn>{canDelete && <Btn kind="danger" disabled={busy} onClick={del}>Delete</Btn>}</>}>
+          <div className="mb-3 flex flex-wrap items-center gap-2"><Badge className={CONTENT_STATE[state][1]}>{CONTENT_STATE[state][0]}</Badge>{item.post_by && <span className="text-xs text-slate-600">Post by {fmtDate(item.post_by)}</span>}{agency && !asAgency && <span className="text-xs text-slate-500">{agency.display_name}</span>}{item.added_by_agency && <Badge className="bg-violet-100 text-violet-800">{asAgency ? 'Your own item' : 'Added by the agency'}</Badge>}</div>
           {item.notes && <p className="mb-3 whitespace-pre-wrap text-sm text-slate-700">{item.notes}</p>}
           <div className="mb-3 space-y-1.5 text-sm">
             {item.kind === 'file'
               ? <div className="flex flex-wrap items-center gap-2"><Icon name="file" className="h-4 w-4 text-slate-500" /><span className="truncate">{item.file_name}{item.file_size ? ` · ${fmtBytes(item.file_size)}` : ''}</span><Btn kind="ghost" className="!px-2.5 !py-1 text-xs" onClick={() => openSigned(item, toast)}><Icon name="download" className="h-3.5 w-3.5" />Download</Btn></div>
-              : <div className="flex items-center gap-2"><Icon name="link" className="h-4 w-4 shrink-0 text-slate-500" />{item.link_url ? <a className="truncate text-brand-700 underline" href={item.link_url} target="_blank" rel="noreferrer">{item.link_url}</a> : <span className="text-slate-500">No link</span>}</div>}
-            <div className="text-xs text-slate-500">Added {fmtDateTime(item.created_at)}{!asAgency ? ` by ${who(item.added_by)}` : ''}{item.scheduled_date ? ` · planned for ${fmtDate(item.scheduled_date)} by ${who(item.scheduled_by)}` : ''}{item.posted_at ? ` · posted ${fmtDateTime(item.posted_at)} by ${who(item.posted_by)}` : ''}</div>
+              : <div className="flex items-center gap-2"><Icon name="link" className="h-4 w-4 shrink-0 text-slate-500" />{item.link_url ? <a className="truncate text-brand-700 underline" href={item.link_url} target="_blank" rel="noreferrer">{item.link_url}</a> : <span className="text-slate-500">Title only — no file or link</span>}</div>}
+            <div className="text-xs text-slate-500">Added {fmtDateTime(item.created_at)} by {addedBy}{item.scheduled_date ? ` · planned for ${fmtDate(item.scheduled_date)} by ${who(item.scheduled_by)}` : ''}{item.posted_at ? ` · posted ${fmtDateTime(item.posted_at)} by ${who(item.posted_by)}` : ''}</div>
           </div>
           {item.posted_url ? (
             <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Posted: <a className="underline" href={item.posted_url} target="_blank" rel="noreferrer">{item.posted_url}</a>
@@ -134,28 +137,32 @@
       );
     };
 
-    // staff: zip files (one item per file, uploaded to the private bucket) or a link — optionally a listing / project page
-    const AddContentModal = ({ agency, onClose }) => {
+    // Files (one item per file, private bucket), a link, or only a title.
+    // staff: optional listing / project page + "post by" deadline · agency login (asAgency): its own items with an
+    // optional planned day — the database marks them as the agency's (added_by_agency, sql/028)
+    const AddContentModal = ({ agency, asAgency, onClose }) => {
       const { me, data, save, toast } = useApp();
-      const [tab, setTab] = useState('files'); const [files, setFiles] = useState([]); const [postBy, setPostBy] = useState(''); const [notes, setNotes] = useState('');
+      const [tab, setTab] = useState('files'); const [files, setFiles] = useState([]); const [postBy, setPostBy] = useState(''); const [day, setDay] = useState(''); const [notes, setNotes] = useState('');
       const [title, setTitle] = useState(''); const [link, setLink] = useState(''); const [pick, setPick] = useState(null); const [busy, setBusy] = useState(''); const [dragOver, setDragOver] = useState(false);
       const addFiles = (list) => setFiles((f) => [...f, ...Array.from(list || []).filter((x) => !f.some((y) => y.name === x.name && y.size === x.size))]);
       const tooBig = files.filter((f) => f.size > CONTENT_MAX_MB * 1048576);
-      const props = [...data.listings.map((l) => ({ id: 'l:' + l.id, label: `${l.reference_code} — ${l.title || l.location}`, url: l.website_url || l.claimed_url || '', listing_id: l.id })),
+      const props = asAgency ? [] : [...data.listings.map((l) => ({ id: 'l:' + l.id, label: `${l.reference_code} — ${l.title || l.location}`, url: l.website_url || l.claimed_url || '', listing_id: l.id })),
         ...(data.projects || []).map((p) => ({ id: 'p:' + p.id, label: `${p.reference_code} — ${p.name}`, url: p.website_url || p.claimed_url || '', project_id: p.id }))];
       const choose = (id) => { setPick(id); const p = props.find((x) => x.id === id); if (p) { setTitle(p.label); setLink(p.url); } };
       const badLink = link.trim() && !/^https?:\/\/\S+$/i.test(link.trim());
       const submit = async () => {
-        const common = { agency_id: agency.id, post_by: postBy || null, notes: notes.trim() || null, added_by: me.id };
-        if (tab === 'link') {
+        const common = asAgency ? { agency_id: agency.id, notes: notes.trim() || null, scheduled_date: day || null }
+          : { agency_id: agency.id, post_by: postBy || null, notes: notes.trim() || null, added_by: me.id };
+        if (tab !== 'files') {          // a link, or only a title (kind 'link' without a link)
           if (!title.trim()) { toast('Give it a title', 'error'); return; }
-          if (badLink) { toast('The link must start with http:// or https://', 'error'); return; }
-          const p = props.find((x) => x.id === pick) || {};
+          if (tab === 'link' && !link.trim()) { toast('Paste the link — or use “Title only”', 'error'); return; }
+          if (tab === 'link' && badLink) { toast('The link must start with http:// or https://', 'error'); return; }
+          const p = (tab === 'link' && props.find((x) => x.id === pick)) || {};
           setBusy('Saving…');
-          const row = await save('content_items', { ...common, kind: 'link', title: title.trim(), link_url: link.trim() || null, listing_id: p.listing_id || null, project_id: p.project_id || null });
+          const row = await save('content_items', { ...common, kind: 'link', title: title.trim(), link_url: tab === 'link' ? link.trim() : null, listing_id: p.listing_id || null, project_id: p.project_id || null });
           setBusy(''); if (row) { toast('Added'); onClose(); } return;
         }
-        if (!files.length) { toast('Choose the zip files first', 'error'); return; }
+        if (!files.length) { toast('Choose the files first', 'error'); return; }
         if (tooBig.length) { toast(`Over ${CONTENT_MAX_MB} MB, cannot be uploaded: ${tooBig.map((f) => f.name).join(', ')}`, 'error'); return; }
         let done = 0;
         for (const f of files) {
@@ -170,27 +177,29 @@
         setBusy(''); if (done) { toast(`${done} file${done === 1 ? '' : 's'} added`); onClose(); }
       };
       return (
-        <Modal title={`Add content — ${agency.display_name}`} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose} disabled={!!busy}>Cancel</Btn><Btn onClick={submit} disabled={!!busy}>{busy || (tab === 'files' ? `Upload${files.length ? ` ${files.length}` : ''}` : 'Add link')}</Btn></>}>
-          <Tabs value={tab} onChange={setTab} tabs={[['files', 'Zip files'], ['link', 'Link']]} />
+        <Modal title={asAgency ? 'Add content' : `Add content — ${agency.display_name}`} onClose={onClose} footer={<><Btn kind="ghost" onClick={onClose} disabled={!!busy}>Cancel</Btn><Btn onClick={submit} disabled={!!busy}>{busy || (tab === 'files' ? `Upload${files.length ? ` ${files.length}` : ''}` : tab === 'link' ? 'Add link' : 'Add title')}</Btn></>}>
+          <Tabs value={tab} onChange={setTab} tabs={[['files', asAgency ? 'Files' : 'Zip files'], ['link', 'Link'], ['title', 'Title only']]} />
           {tab === 'files' ? (
             <div className="space-y-3">
               <label onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
                 className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center text-sm ${dragOver ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
-                <Icon name="upload" className="mb-1 h-6 w-6 text-slate-400" />Drop the zip files here, or tap to choose<span className="mt-1 text-xs text-slate-500">One calendar item per file · up to {CONTENT_MAX_MB} MB each</span>
+                <Icon name="upload" className="mb-1 h-6 w-6 text-slate-400" />Drop the {asAgency ? '' : 'zip '}files here, or tap to choose<span className="mt-1 text-xs text-slate-500">One calendar item per file · up to {CONTENT_MAX_MB} MB each</span>
                 <input type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
               </label>
               {files.length > 0 && <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">{files.map((f) => <li key={f.name + f.size} className={`flex items-center justify-between gap-2 px-3 py-1.5 ${f.size > CONTENT_MAX_MB * 1048576 ? 'text-rose-700' : ''}`}><span className="truncate">{f.name}</span><span className="flex items-center gap-2 whitespace-nowrap text-xs text-slate-500">{fmtBytes(f.size)}<button className="text-slate-400 hover:text-rose-600" onClick={() => setFiles((x) => x.filter((y) => y !== f))} aria-label="Remove"><Icon name="x" className="h-4 w-4" /></button></span></li>)}</ul>}
             </div>
           ) : (
             <div className="space-y-3">
-              <Field label="Property (optional — fills the title and link)"><Select value={pick} onChange={choose} options={props.map((p) => [p.id, p.label])} placeholder="Pick a listing or project…" /></Field>
-              <Field label="Title" bad={!title.trim()}><input className={inputCls(!title.trim())} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Sea-view apartment HD-A-2510-S" /></Field>
-              <Field label="Link" bad={!!badLink}><input className={inputCls(!!badLink)} value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://home-vacation.com/…" /></Field>
+              {tab === 'link' && props.length > 0 && <Field label="Property (optional — fills the title and link)"><Select value={pick} onChange={choose} options={props.map((p) => [p.id, p.label])} placeholder="Pick a listing or project…" /></Field>}
+              <Field label="Title" bad={!title.trim()}><input className={inputCls(!title.trim())} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tab === 'title' ? 'e.g. Reel — sunset at the marina' : 'e.g. Sea-view apartment HD-A-2510-S'} /></Field>
+              {tab === 'link' ? <Field label="Link" bad={!link.trim() || !!badLink}><input className={inputCls(!link.trim() || !!badLink)} value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" /></Field>
+                : <p className="text-xs text-slate-500">Only a title on the calendar — a post idea, a reel, a story. No file or link needed.</p>}
             </div>
           )}
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Post by (optional deadline)"><input type="date" className={inputCls()} value={postBy} onChange={(e) => setPostBy(e.target.value)} /></Field>
-            <Field label="Notes for the agency"><input className={inputCls()} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Caption ideas, what to highlight…" /></Field>
+            {asAgency ? <Field label="Planned day (optional)"><input type="date" className={inputCls()} value={day} onChange={(e) => setDay(e.target.value)} /></Field>
+              : <Field label="Post by (optional deadline)"><input type="date" className={inputCls()} value={postBy} onChange={(e) => setPostBy(e.target.value)} /></Field>}
+            <Field label={asAgency ? 'Notes' : 'Notes for the agency'}><input className={inputCls()} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={asAgency ? 'Anything Home & Vacation should know…' : 'Caption ideas, what to highlight…'} /></Field>
           </div>
         </Modal>
       );

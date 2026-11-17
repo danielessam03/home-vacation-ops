@@ -35,6 +35,13 @@
       { id: uid(), agency_id: AG1, kind: 'link', title: 'Reel — Sahl Hasheesh', link_url: 'https://home-vacation.com/y', scheduled_date: new Date(now).toISOString().slice(0, 10), posted_url: 'https://instagram.com/p/1', posted_at: iso(1), posted_by: U.agency, created_at: iso(60), updated_at: iso(1), added_by: U.marketing, scheduled_by: U.agency },
       { id: uid(), agency_id: AG2, kind: 'file', title: 'Brochure Q4', file_name: 'q4.zip', file_path: AG2 + '/y/q4.zip', file_size: 500000, scheduled_date: new Date(now + 48 * H).toISOString().slice(0, 10), posted_url: null, created_at: iso(2), updated_at: iso(2), added_by: U.manager },
     ],
+    ops_photo_requests: [
+      { id: uid(), request_no: 11, owner_name: 'Mr Late', owner_phone: '01001112223', location: 'Hadaba', property_type: 'Apartment', deal_type: 'sale', status: 'scheduled', scheduled_at: iso(50), requested_by: U.data_entry, assigned_to: me, created_at: iso(120), updated_at: iso(60) },
+      { id: uid(), request_no: 12, owner_name: 'Mrs Today', location: 'Magawish', property_type: 'Villa', deal_type: 'rent', status: 'scheduled', scheduled_at: new Date(new Date().setHours(15, 0, 0, 0)).toISOString(), requested_by: U.data_entry, assigned_to: me, created_at: iso(30), updated_at: iso(20) },
+      { id: uid(), request_no: 13, owner_name: 'Mr Later', location: 'Sahl Hasheesh', property_type: 'Apartment', deal_type: 'sale', status: 'scheduled', scheduled_at: iso(-72), requested_by: U.manager, assigned_to: U.marketing, created_at: iso(10), updated_at: iso(10) },
+      { id: uid(), request_no: 14, owner_name: 'No Date Owner', location: 'Hadaba', status: 'requested', requested_by: me, assigned_to: null, created_at: iso(80), updated_at: iso(80) },
+      { id: uid(), request_no: 15, owner_name: 'Shot One', location: 'Magawish', status: 'shot', intranet_folder: 'Shot One Magawish', photos_count: 24, requested_by: U.data_entry, assigned_to: U.marketing, created_at: iso(100), updated_at: iso(30) },
+    ],
     ops_tasks: [
       { id: uid(), title: 'Call the owner of HD-A-2001-S', description: 'Ask about the price', task_type: null, assigned_to: U.data_entry, assigned_to_multi: [U.marketing], created_by: U.admin, status: 'todo', priority: 'normal',
         due_at: iso(-30), created_at: iso(5), updated_at: iso(5), due_history: [] },

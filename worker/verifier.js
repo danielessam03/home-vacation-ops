@@ -450,6 +450,29 @@ async function raiseAlerts(env) {
       body: `${c.scheduled_date ? `Planned for ${c.scheduled_date}` : 'No day planned'}${c.post_by ? `, post by ${c.post_by}` : ''} — no post link yet.`, target_role: 'manager', dedupe_key: `content_late:${c.id}:${c.scheduled_date || c.post_by}` });
   }
 
+  // photography missions (Needs photography): shoot today · shoot overdue · no date for 2+ days · photos waiting a day for review
+  const cairoDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  const cairoTime = (d) => new Date(d).toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit' });
+  const shoots = await sbAll(env, 'ops_photo_requests?select=id,request_no,owner_name,location,status,scheduled_at,assigned_to,requested_by,created_at,updated_at&status=in.(requested,scheduled,shot)');
+  const dayNow = cairoDay(now);
+  for (const r of shoots) {
+    const tag = `PH-${String(r.request_no || 0).padStart(4, '0')} — ${r.owner_name}, ${r.location}`; const base = { entity_type: 'photo', entity_id: r.id }; const who = r.assigned_to || r.requested_by;
+    if (r.status === 'scheduled' && r.scheduled_at) {
+      const d = cairoDay(r.scheduled_at);
+      if (d === dayNow) alerts.push({ ...base, level: 'warning', title: `Shoot today ${cairoTime(r.scheduled_at)} — ${tag}`, body: 'Press “Photos taken” in Needs photography when it is done.', target_user: who, dedupe_key: `photo_today:${r.id}:${d}` });
+      if (d < dayNow) {
+        const a = { ...base, title: `Shoot overdue — ${tag}`, body: `Was planned for ${d} and is not marked as taken. Do it, or move the date.` };
+        alerts.push({ ...a, level: 'critical', target_user: who, dedupe_key: `photo_late:${r.id}:${d}:u` }, { ...a, level: 'warning', target_role: 'manager', dedupe_key: `photo_late:${r.id}:${d}:m` });
+      }
+    } else if (r.status === 'shot') {
+      if (now - new Date(r.updated_at).getTime() > 24 * 36e5) alerts.push({ ...base, level: 'warning', title: `Photos waiting for review — ${tag}`, body: 'Shot more than a day ago — approve the photos or ask for a re-shoot.', target_role: 'manager', dedupe_key: `photo_review:${r.id}:${cairoDay(r.updated_at)}` });
+    } else if (now - new Date(r.created_at).getTime() > 48 * 36e5) {
+      const a = { ...base, level: 'warning', title: `No shoot date yet — ${tag}`, body: `Waiting ${Math.floor((now - new Date(r.created_at).getTime()) / 864e5)} days for a photographer and a date.` };
+      alerts.push({ ...a, target_role: 'manager', dedupe_key: `photo_nodate:${r.id}:m` });
+      if (r.assigned_to) alerts.push({ ...a, target_user: r.assigned_to, dedupe_key: `photo_nodate:${r.id}:u` });
+    }
+  }
+
   const nowIso = new Date().toISOString();
   const tasks = await sbAll(env, `ops_tasks?select=id,title,assigned_to,assigned_to_multi,due_at&status=in.(todo,doing)&due_at=lt.${nowIso}`);
   for (const t of tasks) {

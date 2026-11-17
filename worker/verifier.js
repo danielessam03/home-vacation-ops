@@ -64,6 +64,13 @@ export default {
         if (!['admin', 'manager'].includes(caller.role)) return json({ error: 'Managers only' }, 403);
         return json(await generateRecurringTasks(env));
       }
+      // WhatsApp set-up from Settings → Verifier & messages (admins): what is connected · create the template · test to my own phone
+      if (path === '/whatsapp-status' || path === '/whatsapp-template' || path === '/whatsapp-test') {
+        if (caller.role !== 'admin') return json({ error: 'Admins only' }, 403);
+        if (path === '/whatsapp-status') return json(await whatsappStatus(env));
+        if (path === '/whatsapp-template') return json(await whatsappCreateTemplate(env));
+        return json(await whatsappTest(env, caller));
+      }
       return json({ error: 'Not found' }, 404);
     } catch (e) {
       return json({ error: String(e.message || e) }, 400);
@@ -512,12 +519,73 @@ async function raiseAlerts(env) {
 // WhatsApp (Meta Cloud API) — built, shipped DISABLED. Set WHATSAPP_ENABLED="true" once the number is approved.
 // Needs an approved template named "hv_ops_alert" with two body variables: {{1}} title, {{2}} details.
 // =====================================================================================
+// Provider: Kapso (secret KAPSO_API_KEY — a gateway in front of Meta's Cloud API that takes the same JSON) or Meta direct (WHATSAPP_TOKEN).
+const waApi = (env) => env.KAPSO_API_KEY
+  ? { name: 'kapso', base: 'https://api.kapso.ai/meta/whatsapp/v24.0', headers: { 'X-API-Key': env.KAPSO_API_KEY, 'content-type': 'application/json' } }
+  : { name: 'meta', base: 'https://graph.facebook.com/v20.0', headers: { authorization: `Bearer ${env.WHATSAPP_TOKEN}`, 'content-type': 'application/json' } };
+const waReady = (env) => !!((env.KAPSO_API_KEY || env.WHATSAPP_TOKEN) && env.WHATSAPP_PHONE_NUMBER_ID);
+const waTypes = (env) => String(env.WHATSAPP_ENTITY_TYPES || '').split(',').map((s) => s.trim()).filter(Boolean);     // empty = every queued message
+const waTemplate = (env) => env.WHATSAPP_TASK_TEMPLATE || 'hv_task_assigned';
+const waErr = (r) => { const e = r && r.data && r.data.error; return (e && (e.message || (typeof e === 'string' ? e : JSON.stringify(e)))) || (r && r.data && r.data.message) || `HTTP ${r && r.status}`; };
+async function waCall(env, path, init = {}) {
+  const api = waApi(env);
+  const res = await fetch(`${api.base}/${path}`, { ...init, headers: api.headers });
+  return { ok: res.ok, status: res.status, data: await res.json().catch(() => ({})) };
+}
+// The one message format for everything in the outbox: {{1}} first name · {{2}} system · {{3}} title, and a button to /go/<message id>
+const waTemplateBody = (env) => {
+  const go = `${env.PUBLIC_WORKER_URL || 'https://hv-ops-verifier.homevacation1950.workers.dev'}/go/`;
+  return { name: waTemplate(env), language: env.WHATSAPP_TEMPLATE_LANG || 'ar', category: 'UTILITY', parameter_format: 'POSITIONAL',
+    components: [
+      { type: 'BODY', text: 'مرحباً {{1}}، لديك مهمة أو تنبيه من نظام {{2}}:\n{{3}}\nاضغط الزر لفتح التفاصيل.', example: { body_text: [['أحمد', 'HV Ops', 'Shoot today 14:00 — PH-0007 — Mr Owner, Hadaba']] } },
+      { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'فتح التفاصيل', url: `${go}{{1}}`, example: [`${go}3f2c1a9e-0000-4000-8000-000000000000`] }] },
+    ] };
+};
+async function whatsappStatus(env) {
+  const out = { provider: waApi(env).name, key: !!(env.KAPSO_API_KEY || env.WHATSAPP_TOKEN), phone_number_id: !!env.WHATSAPP_PHONE_NUMBER_ID, business_account_id: !!env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+    enabled: env.WHATSAPP_ENABLED === 'true', only: waTypes(env), template: waTemplate(env), template_status: null };
+  if (out.key && out.business_account_id) {
+    try {
+      const r = await waCall(env, `${env.WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates?name=${encodeURIComponent(out.template)}&fields=name,status,language`);
+      const t = r.ok && r.data && Array.isArray(r.data.data) ? r.data.data.find((x) => x.name === out.template) : null;
+      out.template_status = t ? t.status : r.ok ? 'NOT CREATED' : `unknown (${waErr(r)})`;
+    } catch (e) { out.template_status = `unknown (${e.message || e})`; }
+  }
+  return out;
+}
+async function whatsappCreateTemplate(env) {
+  if (!(env.KAPSO_API_KEY || env.WHATSAPP_TOKEN) || !env.WHATSAPP_BUSINESS_ACCOUNT_ID) throw new Error('The worker needs the WhatsApp key and WHATSAPP_BUSINESS_ACCOUNT_ID first');
+  const r = await waCall(env, `${env.WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`, { method: 'POST', body: JSON.stringify(waTemplateBody(env)) });
+  if (!r.ok) throw new Error(`Template not created: ${waErr(r)}`);
+  return { created: true, id: (r.data && r.data.id) || null, status: (r.data && r.data.status) || 'PENDING' };
+}
+// One real message through the outbox to the caller's own phone (works before the channel is switched on)
+async function whatsappTest(env, caller) {
+  if (!waReady(env)) throw new Error('The worker has no WhatsApp key or phone number id yet');
+  const key = `ops:wa-test:${caller.id}:${Date.now()}`;
+  await sb(env, 'rpc/hv_notify', { method: 'POST', body: { p_recipient: caller.id, p_system: 'ops', p_entity_type: 'photo', p_entity_id: 'test', p_title: 'Test message — WhatsApp is connected',
+    p_body: 'Sent from Settings → Verifier & messages.', p_url: 'https://home-vacation-ops.pages.dev/#photo', p_dedupe: key } });
+  const rows = await sb(env, `hv_notifications?dedupe_key=eq.${encodeURIComponent(key)}&select=id,recipient,phone,email,system,title,body,url,skip_reason`);
+  const n = rows[0]; if (!n) throw new Error('The test message could not be queued');
+  if (!n.phone) throw new Error(`Your HR login has no usable mobile number (${n.skip_reason || 'no phone'})`);
+  const me = await sb(env, `app_users?id=eq.${caller.id}&select=full_name_en,full_name_ar,username`);
+  const first = ((me[0] && (me[0].full_name_en || me[0].full_name_ar || me[0].username)) || 'there').split(' ')[0];
+  try {
+    const id = await sendWhatsAppTask(env, n, first);
+    await sb(env, `hv_notifications?id=eq.${n.id}`, { method: 'PATCH', body: { status: 'sent', sent_at: new Date().toISOString(), sent_via: 'whatsapp', provider_id: id || null, attempts: 1 } });
+    return { sent: true, to: n.phone, id: id || null };
+  } catch (e) {
+    await sb(env, `hv_notifications?id=eq.${n.id}`, { method: 'PATCH', body: { status: 'failed', error: String(e.message || e).slice(0, 300), attempts: 5 } });
+    throw new Error(`WhatsApp refused it: ${e.message || e}`);
+  }
+}
+
 export async function sendWhatsApp(env, phone, template, vars) {
   if (env.WHATSAPP_ENABLED !== 'true') return { skipped: true };
-  if (!env.WHATSAPP_TOKEN || !env.WHATSAPP_PHONE_NUMBER_ID) throw new Error('WhatsApp secrets missing');
-  const res = await fetch(`https://graph.facebook.com/v20.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+  if (!waReady(env)) throw new Error('WhatsApp secrets missing');
+  const res = await fetch(`${waApi(env).base}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${env.WHATSAPP_TOKEN}`, 'content-type': 'application/json' },
+    headers: waApi(env).headers,
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       to: String(phone).replace(/[^\d]/g, ''),
@@ -561,14 +629,18 @@ async function sendEmail(env, n, firstName) {
 export async function drainNotifications(env) {
   const out = { whatsapp: env.WHATSAPP_ENABLED === 'true', email: env.EMAIL_ENABLED === 'true' && !!env.RESEND_API_KEY, sent: 0, failed: 0, pending: 0 };
   out.enabled = out.whatsapp || out.email;
-  const rows = await sb(env, 'hv_notifications?status=eq.pending&attempts=lt.5&order=created_at.asc&limit=25&select=id,recipient,phone,email,system,title,body,url');
+  out.whatsapp = out.whatsapp && waReady(env);
+  // WHATSAPP_ENTITY_TYPES narrows what may go out by WhatsApp (e.g. "photo"). While e-mail is off, only those rows are
+  // fetched, so the older messages of other kinds can never crowd them out of the 25 handled per run.
+  const types = waTypes(env); const onlyTypes = types.length && !out.email ? `&entity_type=in.(${types.join(',')})` : '';
+  const rows = await sb(env, `hv_notifications?status=eq.pending&attempts=lt.5&order=created_at.asc&limit=25${onlyTypes}&select=id,recipient,phone,email,system,entity_type,title,body,url`);
   out.pending = rows.length;
   if (!out.enabled || !rows.length) return out;
   const people = await sb(env, 'app_users?select=id,full_name_en,full_name_ar,username&is_active=eq.true');
   const nameOf = (id) => { const p = people.find((x) => x.id === id); return p ? (p.full_name_en || p.full_name_ar || p.username || '').split(' ')[0] : ''; };
   for (const n of rows) {
     // channels this row can use right now; a row with only a phone waits for WhatsApp, one with only an e-mail waits for e-mail
-    const canEmail = out.email && !!n.email, canWa = out.whatsapp && !!n.phone;
+    const canEmail = out.email && !!n.email, canWa = out.whatsapp && !!n.phone && (!types.length || types.includes(n.entity_type));
     if (!canEmail && !canWa) continue;
     const via = []; const errors = [];
     if (canEmail) { try { const id = await sendEmail(env, n, nameOf(n.recipient) || 'there'); via.push('email'); n.provider_id = id; } catch (e) { errors.push('email: ' + (e.message || e)); } }
@@ -589,9 +661,9 @@ export async function drainNotifications(env) {
 async function sendWhatsAppTask(env, n, firstName) {
   {
     {
-      const res = await fetch(`https://graph.facebook.com/v20.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+      const res = await fetch(`${waApi(env).base}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${env.WHATSAPP_TOKEN}`, 'content-type': 'application/json' },
+        headers: waApi(env).headers,
         body: JSON.stringify({
           messaging_product: 'whatsapp', to: String(n.phone).replace(/[^\d]/g, ''), type: 'template',
           template: { name: env.WHATSAPP_TASK_TEMPLATE || 'hv_task_assigned', language: { code: env.WHATSAPP_TEMPLATE_LANG || 'ar' },
@@ -602,7 +674,7 @@ async function sendWhatsAppTask(env, n, firstName) {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data.error && data.error.message) || `WhatsApp ${res.status}`);
+      if (!res.ok) throw new Error(waErr({ status: res.status, data }));
       return data.messages && data.messages[0] && data.messages[0].id;
     }
   }
@@ -628,7 +700,7 @@ async function queuePhotoMessages(env, photoAlerts) {
 }
 
 async function pushWhatsApp(env, criticalAlerts) {
-  if (env.WHATSAPP_ENABLED !== 'true' || !criticalAlerts.length) return;
+  if (env.WHATSAPP_ENABLED !== 'true' || env.WHATSAPP_CRITICAL_ALERTS !== 'true' || !criticalAlerts.length) return;     // its own switch + its own template (hv_ops_alert)
   const people = (await sb(env, 'app_users?select=id,role,ops_role,phone&is_active=eq.true&access_ops=eq.true&phone=not.is.null')).map((u) => ({ id: u.id, phone: u.phone, role: opsRole(u) }));
   let budget = 10;                                   // keep well inside the per-run subrequest limit
   for (const a of criticalAlerts) {

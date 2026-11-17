@@ -18,6 +18,11 @@ MAX_PAGE_FETCHES = "25"
 EMAIL_ENABLED = "false"
 EMAIL_FROM = "Home Vacation Tasks <tasks@home-vacation.com>"
 WHATSAPP_ENABLED = "false"
+# Which queued messages may go out by WhatsApp (hv_notifications.entity_type, comma separated; empty = all task messages).
+# Daniel 2026-11-17: photography alerts only.
+WHATSAPP_ENTITY_TYPES = "photo"
+# Critical HV Ops alerts (SLA breached …) by WhatsApp too — needs the extra template hv_ops_alert
+WHATSAPP_CRITICAL_ALERTS = "false"
 # WhatsApp template used for task messages (create it in Meta Business > WhatsApp > Message templates, category Utility)
 WHATSAPP_TASK_TEMPLATE = "hv_task_assigned"
 WHATSAPP_TEMPLATE_LANG = "ar"
@@ -26,5 +31,8 @@ WHATSAPP_TEMPLATE_LANG = "ar"
 #   SUPABASE_URL
 #   SUPABASE_SERVICE_KEY
 #   RESEND_API_KEY              (e-mail task messages)
-#   WHATSAPP_TOKEN              (only when WhatsApp is enabled)
-#   WHATSAPP_PHONE_NUMBER_ID    (only when WhatsApp is enabled)
+# WhatsApp goes through Kapso (kapso.ai — a gateway in front of Meta's official WhatsApp API, same message format):
+#   KAPSO_API_KEY                 (Kapso → Integrations → API keys)           — secret
+#   WHATSAPP_PHONE_NUMBER_ID      (Kapso → WhatsApp → Phone numbers)          — an id, not a password
+#   WHATSAPP_BUSINESS_ACCOUNT_ID  (the WhatsApp Business Account id; needed to create the template from Settings)
+# Without KAPSO_API_KEY the worker talks to Meta directly and needs WHATSAPP_TOKEN instead.

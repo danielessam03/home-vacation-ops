@@ -503,7 +503,8 @@ async function raiseAlerts(env) {
       prefer: 'resolution=ignore-duplicates,return=representation', body: shaped.slice(i, i + 200) });
     created = created.concat(rowsIn || []);
   }
-  await pushWhatsApp(env, created.filter((a) => a.level === 'critical'));
+  await pushWhatsApp(env, created.filter((a) => a.level === 'critical' && a.entity_type !== 'photo'));     // photo alerts travel through the outbox below — never twice
+  try { await queuePhotoMessages(env, created.filter((a) => a.entity_type === 'photo')); } catch (e) { /* the in-app alert exists; the message is retried with the next new alert */ }
   return created.length;
 }
 
@@ -605,6 +606,25 @@ async function sendWhatsAppTask(env, n, firstName) {
       return data.messages && data.messages[0] && data.messages[0].id;
     }
   }
+}
+
+// Photography missions also go into the task-message outbox (hv_notifications, drained every 5 minutes): the same
+// WhatsApp template / e-mail as task messages, as soon as a channel is switched on. Only NEW alerts are queued, once
+// per person: the photographer for his own shoot; managers AND admins for the manager-level ones.
+async function queuePhotoMessages(env, photoAlerts) {
+  if (!photoAlerts.length) return 0;
+  const staff = (await sb(env, 'app_users?select=id,role,ops_role&is_active=eq.true&access_ops=eq.true')).map((u) => ({ id: u.id, role: opsRole(u) }));
+  let budget = 12, n = 0;                            // one request per message; stay inside the per-run limit
+  for (const a of photoAlerts) {
+    const to = a.target_user ? [a.target_user] : staff.filter((p) => p.role === a.target_role || (a.target_role === 'manager' && p.role === 'admin')).map((p) => p.id);
+    for (const id of new Set(to)) {
+      if (budget-- <= 0) return n;
+      await sb(env, 'rpc/hv_notify', { method: 'POST', body: { p_recipient: id, p_system: 'ops', p_entity_type: 'photo', p_entity_id: String(a.entity_id), p_title: a.title, p_body: a.body || '',
+        p_url: 'https://home-vacation-ops.pages.dev/#photo', p_dedupe: `ops:${a.dedupe_key}:${id}` } });
+      n++;
+    }
+  }
+  return n;
 }
 
 async function pushWhatsApp(env, criticalAlerts) {

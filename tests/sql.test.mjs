@@ -23,7 +23,7 @@ await db.exec(`
   create table public.hv_task_types (id bigint primary key, title text);
   alter table public.app_users enable row level security;
   create policy self_only on public.app_users for select to authenticated using (id = auth.uid());
-  create table public.employees (id uuid primary key default gen_random_uuid(), user_id uuid references public.app_users(id), status text default 'active', created_at timestamptz default now());
+  create table public.employees (id uuid primary key default gen_random_uuid(), user_id uuid references public.app_users(id), status text default 'active', phone text, created_at timestamptz default now());
   create table public.kpi_metrics (id uuid primary key default gen_random_uuid(), code text unique not null, name_en text, name_ar text, points_per_unit numeric default 1,
     value_points_per_million numeric default 0, has_value boolean default false, is_active boolean default true, sort int default 0,
     category text not null default 'sales', constraint kpi_metrics_category_check check (category in ('sales','general')));
@@ -34,10 +34,10 @@ await db.exec(`
   create table public.tasks (id int primary key, hr_marker text); create table public.profiles (id uuid primary key, hr_marker text);
   create function public.my_role() returns text language sql as $f$ select 'hr-owned'::text $f$;
 `);
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '027_agency_portal.sql', '028_agency_adds_content.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '027_agency_portal.sql', '028_agency_adds_content.sql', '029_notify_phone_from_card.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('run ' + f, true); } catch (e) { ok('run ' + f, false, e.message); process.exit(1); }
 }
-for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '027_agency_portal.sql', '028_agency_adds_content.sql', '003_views.sql']) {
+for (const f of ['001_init.sql', '002_seed_settings.sql', '003_views.sql', '004_rls.sql', '005_triggers.sql', '006_site_codes.sql', '007_hr_kpis.sql', '008_media_flags_codes.sql', '009_owner_photos_uploader.sql', '010_two_stage_kpis.sql', '011_projects.sql', '012_photo_requests.sql', '013_whatsapp_outbox.sql', '014_email_channel.sql', '015_price_note.sql', '016_offline.sql', '017_photography_done.sql', '018_offline_required_fields.sql', '019_garden_terrace.sql', '020_task_assignees.sql', '021_recode_listing.sql', '022_task_due_change.sql', '023_template_assignees.sql', '024_claimed_url.sql', '025_entry_credit.sql', '026_project_entry_credit.sql', '027_agency_portal.sql', '028_agency_adds_content.sql', '029_notify_phone_from_card.sql', '003_views.sql']) {
   try { await db.exec(fs.readFileSync(new URL(f, dir), 'utf8')); ok('re-run ' + f, true); } catch (e) { ok('re-run ' + f, false, e.message); }
 }
 
@@ -404,5 +404,14 @@ await expectErr('data entry cannot add content', `insert into ops_content_items 
 await asUser(M); await db.exec(`update ops_agency_users set status='disabled' where id='${AGU}'`); await asUser(AGU);
 r = await db.query(`select count(*)::int n from ops_content_items`); ok('a disabled agency login sees nothing again', r.rows[0].n === 0);
 await asService();
+
+// ---- sql/029: the message phone comes from the login, or else from the HR employee card
+await asService();
+await db.exec(`update app_users set phone = null where id='${D1}'; update employees set phone = '0101 234 5678' where user_id='${D1}';
+  select hv_notify('${D1}','ops','task','t-029','Card phone','b','https://x','test-029-card');
+  select hv_notify('${D2}','ops','task','t-029','Login phone','b','https://x','test-029-login');`);
+r = await db.query(`select dedupe_key k, phone, status from hv_notifications where dedupe_key like 'test-029-%' order by 1`);
+ok('no number on the login -> the employee card number is used', r.rows[0] && r.rows[0].phone === '+201012345678' && r.rows[0].status === 'pending', JSON.stringify(r.rows[0]));
+ok('a number on the login still wins', r.rows[1] && r.rows[1].phone === '+201001234567', JSON.stringify(r.rows[1]));
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

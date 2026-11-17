@@ -19,8 +19,9 @@ EMAIL_ENABLED = "false"
 EMAIL_FROM = "Home Vacation Tasks <tasks@home-vacation.com>"
 WHATSAPP_ENABLED = "false"
 # Which queued messages may go out by WhatsApp (hv_notifications.entity_type, comma separated; empty = all task messages).
-# Daniel 2026-11-17: photography alerts only.
-WHATSAPP_ENTITY_TYPES = "photo"
+# Daniel 2026-11-17 (later the same day): "whoever gets assigned to anything should be notified" -> empty = everything in the outbox
+# (HV Ops tasks, listings, projects, photo shoots and their alerts, Maintenance tasks). Set e.g. "photo" to narrow it again.
+WHATSAPP_ENTITY_TYPES = ""
 # Critical HV Ops alerts (SLA breached …) by WhatsApp too — needs the extra template hv_ops_alert
 WHATSAPP_CRITICAL_ALERTS = "false"
 # Kapso ids given by Daniel 2026-11-17 (identifiers, not secrets). The key itself is the secret KAPSO_API_KEY.

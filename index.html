@@ -55,7 +55,7 @@
     // =========================================================================================
     // CONFIG — bump APP_VERSION on EVERY deploy. It shows in the login footer.
     // =========================================================================================
-    const APP_VERSION = 'v1.32.1';
+    const APP_VERSION = 'v1.32.2';
     const taskPeople = (t) => [...new Set([t.assigned_to, ...(t.assigned_to_multi || [])].filter(Boolean))];      // everyone a task is given to
     const onTask = (t, uid) => taskPeople(t).includes(uid);
     const reqFor = (cfg, offline) => (offline && Array.isArray(cfg.offline_required_fields) ? cfg.offline_required_fields : cfg.required_fields) || [];      // offline properties have their own list
@@ -2997,8 +2997,8 @@ Rules:
         en: ['Portals, lists, KPI metrics, agencies', '“Portals” picks the channels every new listing gets. “Lists” holds facilities, views, currencies, task and deliverable types and the AI export instructions. “KPI metrics” defines each agency’s monthly numbers, and “Agencies” holds the contracts (fee, dates, contact, scope) and the agency accounts (approve a request, disable a login).'],
         ar: ['المنصات والقوائم ومؤشرات الوكالات والعقود', '«Portals» يحدد القنوات التي تأخذها كل وحدة جديدة. «Lists» فيها المرافق والإطلالات والعملات وأنواع المهام والمخرجات وتعليمات التصدير للذكاء الاصطناعي. «KPI metrics» تحدد أرقام كل وكالة الشهرية، و«Agencies» فيها العقود (الرسوم، التواريخ، جهة الاتصال، النطاق) وحسابات الوكالات (اعتماد الطلب، إيقاف الدخول).'] },
       { c: 'settings', page: 'settings', action: 'settings-tab-verifier', target: 'settings-body',
-        en: ['Verifier & messages', 'The worker URL enables “Run verifier now”. Below: every task message sent by e-mail or WhatsApp from HV Ops and Maintenance (sent every 5 minutes; “skipped” = no real e-mail / phone in HR) and the log of the last verifier runs. The WhatsApp line shows whether the channel is connected, the review status of the message template and what it is allowed to send (photography alerts); “Send me a test” sends one message to your own phone.'],
-        ar: ['المُتحقِّق والرسائل', 'رابط الـ worker يفعّل زر «Run verifier now». بالأسفل: كل رسائل المهام المرسلة بالإيميل أو واتساب من HV Ops والصيانة (تُرسل كل 5 دقائق؛ «skipped» = لا يوجد إيميل / رقم حقيقي في HR)، وسجل آخر مرات تشغيل المُتحقِّق. سطر واتساب يوضّح هل القناة متصلة، وحالة مراجعة قالب الرسالة، وما المسموح بإرساله (تنبيهات التصوير)؛ وزر «Send me a test» يرسل رسالة واحدة إلى هاتفك.'] },
+        en: ['Verifier & messages', 'The worker URL enables “Run verifier now”. Below: every task message sent by e-mail or WhatsApp from HV Ops and Maintenance (sent every 5 minutes; “skipped” = no real e-mail / phone in HR) and the log of the last verifier runs. The WhatsApp line shows whether the channel is connected, the review status of the message template and what it sends (every assignment message, or only some kinds); phone numbers come from HR — the login, or else the employee card. “Send me a test” sends one message to your own phone.'],
+        ar: ['المُتحقِّق والرسائل', 'رابط الـ worker يفعّل زر «Run verifier now». بالأسفل: كل رسائل المهام المرسلة بالإيميل أو واتساب من HV Ops والصيانة (تُرسل كل 5 دقائق؛ «skipped» = لا يوجد إيميل / رقم حقيقي في HR)، وسجل آخر مرات تشغيل المُتحقِّق. سطر واتساب يوضّح هل القناة متصلة، وحالة مراجعة قالب الرسالة، وما الذي يرسله (كل رسائل التكليف أو أنواع محددة)؛ والأرقام تؤخذ من HR — من حساب الدخول وإلا فمن بطاقة الموظف. وزر «Send me a test» يرسل رسالة واحدة إلى هاتفك.'] },
 
       // ---------------------------------------------------------------- Roles, permissions & systems
       { c: 'roles', page: 'dashboard', action: 'open-more', target: 'user-card',
@@ -3162,12 +3162,12 @@ Rules:
       useEffect(() => { load(); loadWa(); }, [cfg.worker_url]);
       const mkTemplate = async () => { setBusy(true); const r = await workerCall('/whatsapp-template'); setBusy(false); if (r) { toast('Template sent to WhatsApp for review — usually approved within a day'); loadWa(); } };
       const testWa = async () => { setBusy(true); const r = await workerCall('/whatsapp-test'); setBusy(false); if (r) toast(`Test sent to ${r.to} — check WhatsApp`); load(); };
-      const sendNow = async () => { setBusy(true); const r = await workerCall('/send-notifications'); setBusy(false); if (r) { toast(r.enabled ? `Sent ${r.sent}, failed ${r.failed}` : 'No channel is switched on yet on the worker (e-mail / WhatsApp) — messages stay queued'); load(); } };
+      const sendNow = async () => { setBusy(true); const r = await workerCall('/send-notifications'); setBusy(false); if (r) { toast(r.enabled ? `Sent ${r.sent}, failed ${r.failed}${r.stale ? `, ${r.stale} too old (not sent)` : ''}` : 'No channel is switched on yet on the worker (e-mail / WhatsApp) — messages stay queued'); load(); } };
       const st = { pending: 'bg-amber-100 text-amber-800', sent: 'bg-emerald-100 text-emerald-800', failed: 'bg-rose-100 text-rose-800', skipped: 'bg-slate-100 text-slate-600' };
       return (
         <Card className="scroll-x p-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-brand-800">Task messages (e-mail / WhatsApp) — all systems</h3><div className="flex gap-2"><Btn kind="ghost" className="!py-1.5" onClick={load}>Refresh</Btn>{cfg.worker_url && <Btn kind="soft" className="!py-1.5" disabled={busy} onClick={sendNow}>Send pending now</Btn>}</div></div>
-          <p className="mb-3 text-xs text-slate-500">Every task handed to a person in Maintenance or HV Ops is queued here and sent by e-mail (and WhatsApp if switched on) with a link that opens the task. Messages go out every 5 minutes. “Skipped” means the person has no real e-mail or phone in HR, or gave the task to themselves.</p>
+          <p className="mb-3 text-xs text-slate-500">Every task handed to a person in Maintenance or HV Ops is queued here and sent by e-mail (and WhatsApp if switched on) with a link that opens the task. Messages go out every 5 minutes. “Skipped” means the person has no real e-mail or phone in HR (the number is taken from the login, or else from the employee card), gave the task to themselves, or the message waited more than 2 days.</p>
           {wa && (
             <div data-tour="whatsapp-status" className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-700">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><b>WhatsApp</b>
@@ -3175,7 +3175,7 @@ Rules:
                 {wa.number && <span>number: <b>{wa.number}</b></span>}
                 {wa.template_status && <span>template “{wa.template}”: <b>{wa.template_status}</b></span>}
                 <Badge className={wa.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}>{wa.enabled ? 'switched on' : 'switched off'}</Badge>
-                {wa.only && wa.only.length > 0 && <span>sends only: {wa.only.map((t) => (t === 'photo' ? 'photography alerts' : t)).join(', ')}</span>}
+                <span>{wa.only && wa.only.length > 0 ? `sends only: ${wa.only.map((t) => (t === 'photo' ? 'photography alerts' : t)).join(', ')}` : 'sends: every assignment message below'}</span>
               </div>
               {wa.key && (
                 <div className="mt-2 flex flex-wrap gap-2">

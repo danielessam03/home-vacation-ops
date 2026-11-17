@@ -639,7 +639,7 @@ export async function drainNotifications(env) {
   // WHATSAPP_ENTITY_TYPES narrows what may go out by WhatsApp (e.g. "photo"). While e-mail is off, only those rows are
   // fetched, so the older messages of other kinds can never crowd them out of the 25 handled per run.
   const types = waTypes(env); const onlyTypes = types.length && !out.email ? `&entity_type=in.(${types.join(',')})` : '';
-  const rows = await sb(env, `hv_notifications?status=eq.pending&attempts=lt.5&order=created_at.asc&limit=25${onlyTypes}&select=id,recipient,phone,email,system,entity_type,title,body,url`);
+  const rows = await sb(env, `hv_notifications?status=eq.pending&attempts=lt.5&order=created_at.asc&limit=25${onlyTypes}&select=id,recipient,phone,email,system,entity_type,title,body,url,created_at`);
   out.pending = rows.length;
   if (!out.enabled || !rows.length) return out;
   const people = await sb(env, 'app_users?select=id,full_name_en,full_name_ar,username&is_active=eq.true');
@@ -648,6 +648,11 @@ export async function drainNotifications(env) {
     // channels this row can use right now; a row with only a phone waits for WhatsApp, one with only an e-mail waits for e-mail
     const canEmail = out.email && !!n.email, canWa = out.whatsapp && !!n.phone && (!types.length || types.includes(n.entity_type));
     if (!canEmail && !canWa) continue;
+    // a message that waited more than 2 days (e.g. queued before the channel was switched on) is stale news: not sent
+    if (n.created_at && Date.now() - new Date(n.created_at).getTime() > 48 * 36e5) {
+      await sb(env, `hv_notifications?id=eq.${n.id}`, { method: 'PATCH', body: { status: 'skipped', skip_reason: 'waited more than 2 days — not sent' } });
+      out.stale = (out.stale || 0) + 1; continue;
+    }
     const via = []; const errors = [];
     if (canEmail) { try { const id = await sendEmail(env, n, nameOf(n.recipient) || 'there'); via.push('email'); n.provider_id = id; } catch (e) { errors.push('email: ' + (e.message || e)); } }
     if (canWa) { try { await sendWhatsAppTask(env, n, nameOf(n.recipient) || 'there'); via.push('whatsapp'); } catch (e) { errors.push('whatsapp: ' + (e.message || e)); } }

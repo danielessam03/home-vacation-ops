@@ -145,12 +145,12 @@
       useEffect(() => { load(); loadWa(); }, [cfg.worker_url]);
       const mkTemplate = async () => { setBusy(true); const r = await workerCall('/whatsapp-template'); setBusy(false); if (r) { toast('Template sent to WhatsApp for review — usually approved within a day'); loadWa(); } };
       const testWa = async () => { setBusy(true); const r = await workerCall('/whatsapp-test'); setBusy(false); if (r) toast(`Test sent to ${r.to} — check WhatsApp`); load(); };
-      const sendNow = async () => { setBusy(true); const r = await workerCall('/send-notifications'); setBusy(false); if (r) { toast(r.enabled ? `Sent ${r.sent}, failed ${r.failed}` : 'No channel is switched on yet on the worker (e-mail / WhatsApp) — messages stay queued'); load(); } };
+      const sendNow = async () => { setBusy(true); const r = await workerCall('/send-notifications'); setBusy(false); if (r) { toast(r.enabled ? `Sent ${r.sent}, failed ${r.failed}${r.stale ? `, ${r.stale} too old (not sent)` : ''}` : 'No channel is switched on yet on the worker (e-mail / WhatsApp) — messages stay queued'); load(); } };
       const st = { pending: 'bg-amber-100 text-amber-800', sent: 'bg-emerald-100 text-emerald-800', failed: 'bg-rose-100 text-rose-800', skipped: 'bg-slate-100 text-slate-600' };
       return (
         <Card className="scroll-x p-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-brand-800">Task messages (e-mail / WhatsApp) — all systems</h3><div className="flex gap-2"><Btn kind="ghost" className="!py-1.5" onClick={load}>Refresh</Btn>{cfg.worker_url && <Btn kind="soft" className="!py-1.5" disabled={busy} onClick={sendNow}>Send pending now</Btn>}</div></div>
-          <p className="mb-3 text-xs text-slate-500">Every task handed to a person in Maintenance or HV Ops is queued here and sent by e-mail (and WhatsApp if switched on) with a link that opens the task. Messages go out every 5 minutes. “Skipped” means the person has no real e-mail or phone in HR, or gave the task to themselves.</p>
+          <p className="mb-3 text-xs text-slate-500">Every task handed to a person in Maintenance or HV Ops is queued here and sent by e-mail (and WhatsApp if switched on) with a link that opens the task. Messages go out every 5 minutes. “Skipped” means the person has no real e-mail or phone in HR (the number is taken from the login, or else from the employee card), gave the task to themselves, or the message waited more than 2 days.</p>
           {wa && (
             <div data-tour="whatsapp-status" className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-700">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><b>WhatsApp</b>
@@ -158,7 +158,7 @@
                 {wa.number && <span>number: <b>{wa.number}</b></span>}
                 {wa.template_status && <span>template “{wa.template}”: <b>{wa.template_status}</b></span>}
                 <Badge className={wa.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}>{wa.enabled ? 'switched on' : 'switched off'}</Badge>
-                {wa.only && wa.only.length > 0 && <span>sends only: {wa.only.map((t) => (t === 'photo' ? 'photography alerts' : t)).join(', ')}</span>}
+                <span>{wa.only && wa.only.length > 0 ? `sends only: ${wa.only.map((t) => (t === 'photo' ? 'photography alerts' : t)).join(', ')}` : 'sends: every assignment message below'}</span>
               </div>
               {wa.key && (
                 <div className="mt-2 flex flex-wrap gap-2">

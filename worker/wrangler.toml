@@ -23,6 +23,9 @@ WHATSAPP_ENABLED = "false"
 WHATSAPP_ENTITY_TYPES = "photo"
 # Critical HV Ops alerts (SLA breached …) by WhatsApp too — needs the extra template hv_ops_alert
 WHATSAPP_CRITICAL_ALERTS = "false"
+# Kapso ids given by Daniel 2026-11-17 (identifiers, not secrets). The key itself is the secret KAPSO_API_KEY.
+WHATSAPP_PHONE_NUMBER_ID = "597907523413541"
+WHATSAPP_BUSINESS_ACCOUNT_ID = "2102230076919824"
 # WhatsApp template used for task messages (create it in Meta Business > WhatsApp > Message templates, category Utility)
 WHATSAPP_TASK_TEMPLATE = "hv_task_assigned"
 WHATSAPP_TEMPLATE_LANG = "ar"

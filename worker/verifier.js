@@ -543,7 +543,13 @@ const waTemplateBody = (env) => {
 };
 async function whatsappStatus(env) {
   const out = { provider: waApi(env).name, key: !!(env.KAPSO_API_KEY || env.WHATSAPP_TOKEN), phone_number_id: !!env.WHATSAPP_PHONE_NUMBER_ID, business_account_id: !!env.WHATSAPP_BUSINESS_ACCOUNT_ID,
-    enabled: env.WHATSAPP_ENABLED === 'true', only: waTypes(env), template: waTemplate(env), template_status: null };
+    enabled: env.WHATSAPP_ENABLED === 'true', only: waTypes(env), template: waTemplate(env), template_status: null, number: null };
+  if (out.key && out.phone_number_id) {       // which number is behind the id — also catches the two ids being swapped
+    try {
+      const r = await waCall(env, `${env.WHATSAPP_PHONE_NUMBER_ID}?fields=display_phone_number,verified_name`);
+      out.number = r.ok && r.data && (r.data.display_phone_number || r.data.verified_name) ? [r.data.display_phone_number, r.data.verified_name].filter(Boolean).join(' · ') : `not confirmed (${waErr(r)})`;
+    } catch (e) { out.number = `not confirmed (${e.message || e})`; }
+  }
   if (out.key && out.business_account_id) {
     try {
       const r = await waCall(env, `${env.WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates?name=${encodeURIComponent(out.template)}&fields=name,status,language`);

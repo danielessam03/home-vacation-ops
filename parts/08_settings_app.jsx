@@ -155,6 +155,7 @@
             <div data-tour="whatsapp-status" className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-700">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><b>WhatsApp</b>
                 <span>{wa.key && wa.phone_number_id ? `connected through ${wa.provider === 'kapso' ? 'Kapso' : 'Meta'}` : 'not connected yet — the worker has no WhatsApp key / number'}</span>
+                {wa.number && <span>number: <b>{wa.number}</b></span>}
                 {wa.template_status && <span>template “{wa.template}”: <b>{wa.template_status}</b></span>}
                 <Badge className={wa.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}>{wa.enabled ? 'switched on' : 'switched off'}</Badge>
                 {wa.only && wa.only.length > 0 && <span>sends only: {wa.only.map((t) => (t === 'photo' ? 'photography alerts' : t)).join(', ')}</span>}
